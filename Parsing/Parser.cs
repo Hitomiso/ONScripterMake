@@ -94,11 +94,22 @@ public static partial class Parser
 			{CommandType.Branch, SaveBranchParameter},
 			{CommandType.ForLoop, SaveRegularParameter},
 		};*/
+
+		private readonly TokenType[] TOKENS_NOT_BEFORE_COMMAND = 
+		[
+			TokenType.NumVar,
+			TokenType.StrVar,
+			TokenType.Array,
+			TokenType.OpenBracket,
+			TokenType.OpenSquareBracket,
+			TokenType.Operator,
+			TokenType.ConditionOperator
+		];
 		
 		public bool IsCommandExpected { get; private set; } = true;
 		public Token LastToken { get; private set; } = null;
 		public Token CommandToken = null;
-		public CommandType CurrentCommandType { get; private set; }
+		public CommandType? CurrentCommandType { get; private set; }
 		public List<Token> ParameterBuffer = [];
 		
 		private ForLoopParameter _currentLoopParameter;
@@ -121,13 +132,21 @@ public static partial class Parser
 			StepValue
 		}
 		
+		// @TODO: Отрефакторить этот ужас
 		public void PushToken(Token token)
 		{
 			// Первые токены строки и токены-команды должны проверяться раздельно
-			if (LastToken == null && !Enumerable.Contains(ALLOWED_AT_START_OF_LINE_TOKENS, token.Type))
-				throw new ParseException(token, MessageID.ERR_INVALID_START_OF_LINE);
-			if (IsCommandExpected && token.Type != TokenType.Comment && !COMMAND_TOKENS.Contains(token.Type))
-				throw new ParseException(token, MessageID.ERR_COMMAND_EXPECTED);
+			if (LastToken == null)
+			{
+				if (!Enumerable.Contains(ALLOWED_AT_START_OF_LINE_TOKENS, token.Type))
+					throw new ParseException(token, MessageID.ERR_INVALID_START_OF_LINE);
+				if (token.Type == TokenType.Label)
+				{
+					_distinctTokens.Add(token);
+					LastToken = token;
+					return;
+				}
+			}	
 			
 			if (CurrentCommandType != CommandType.Dialog)
 			{
@@ -136,43 +155,29 @@ public static partial class Parser
 					case TokenType.Comment:
 						SaveParameter();
 						_distinctTokens.Add(token);
+						LastToken = token;
 						return;
 					case TokenType.Colon:
 					case TokenType.JumpPoint:
 						SaveParameter();
 						IsCommandExpected = true;
+						LastToken = token;
 						return;
 				}
 			}
+
 			if (IsCommandExpected)
 			{
-				if (token.Type != TokenType.Command || token.Type != TokenType.Name)
-					throw new ParseException(); // Not a command?
-				
-				// @TODO: Обрабатываем присвоение токена и тип команды здесь?
-				switch (token.Value)
-				{
-					case "d":
-					case "d2":
-						CurrentCommandType = ParseState.CommandType.Dialog;
-						break;
-					case "if":
-					case "notif":
-						CurrentCommandType = ParseState.CommandType.Branch;
-						break;
-					case "for":
-						CurrentCommandType = ParseState.CommandType.ForLoop;
-						break;
-					default:
-						CurrentCommandType = ParseState.CommandType.Regular;
-						break;
-				}
+				if (token.Type != TokenType.Comment && !COMMAND_TOKENS.Contains(token.Type))
+					throw new ParseException(token, MessageID.ERR_COMMAND_EXPECTED);
+				UpdateCurrentCommandType(token);
 				CommandToken = token;
 				_distinctTokens.Add(token);
 				IsCommandExpected = false;
-			}
-			
-			// PARAMETER_PUSH_HANDLERS[CurrentCommandType](token);
+				LastToken = token;
+				return;
+			}	
+
 			switch (CurrentCommandType)
 			{
 				case CommandType.Regular:
@@ -200,15 +205,46 @@ public static partial class Parser
 				SaveParameter();
 			return _distinctTokens;
 		}
+
+		private void UpdateCurrentCommandType(Token token)
+		{
+			if (token.Type == TokenType.Directive)
+			{
+				CurrentCommandType = CommandType.Directive;
+				return;
+			}
+
+			switch (token.Value)
+			{
+				case "d":
+				case "d2":
+					CurrentCommandType = CommandType.Dialog;
+					break;
+				case "if":
+				case "notif":
+					CurrentCommandType = CommandType.Branch;
+					break;
+				case "for":
+					CurrentCommandType = CommandType.ForLoop;
+					_currentLoopParameter = ForLoopParameter.Counter;
+					break;
+				default:
+					CurrentCommandType = CommandType.Regular;
+					break;
+			}
+		}
 		
 		private void SaveParameter()
 		{
-			// PARAMETER_SAVE_HANDLERS[CurrentCommandType]();
+			if (ParameterBuffer.Count == 0)
+				return;
 			Token token;
 			if (CurrentCommandType == CommandType.Branch)
-				token = ParseLogicExpression(ParameterBuffer);
+				token = ParseLogicExpression(ref ParameterBuffer);
 			else
-				token = ParseArithmeticExpression(ParameterBuffer);
+				token = ParseArithmeticExpression(ref ParameterBuffer);
+			if (ParameterBuffer.Count > 1)
+				throw new ParseException(ParameterBuffer[1], MessageID.ERR_UNEXPECTED_TOKEN);
 			CommandToken.Children.Add(token);
 			ParameterBuffer.Clear();
 		}
@@ -217,7 +253,7 @@ public static partial class Parser
 		{
 			if (token.Type == TokenType.Comma)
 				SaveParameter();
-			else
+			else if (!ConvertNameTokenIntoCommand(token))
 				ParameterBuffer.Add(token);
 		}
 		
@@ -232,24 +268,17 @@ public static partial class Parser
 		{
 			if (ParameterBuffer.Count == 0 || token.Type != TokenType.Name)
 				return false;
-			switch (ParameterBuffer[^1].Type)
-			{
-				// Переделать в константный массив
-				case TokenType.NumVar:
-				case TokenType.StrVar:
-				case TokenType.OpenBracket:
-				case TokenType.OpenSquareBracket:
-				case TokenType.Operator:
-				case TokenType.ConditionOperator:
-					// Перечисляем типы, при которых текущий токен всё еще не команда
-					return false;
-			}
+			if (TOKENS_NOT_BEFORE_COMMAND.Contains(ParameterBuffer[^1].Type))
+				return false;
+			
 			// Превращаем в команду, заносим в _distinctTokens, сохраняем параметр условия
 			SaveParameter();
 			if (token.Value == "d" || token.Value == "d2")
 				token.Type = TokenType.Dialog;
 			else
 				token.Type = TokenType.Command;
+			UpdateCurrentCommandType(token);
+			_distinctTokens.Add(token);
 			CommandToken = token;
 			IsCommandExpected = false;
 			return true;
@@ -257,7 +286,7 @@ public static partial class Parser
 		
 		private void PushForLoopParameter(Token token)
 		{
-			if (ParameterBuffer.Count == 0 && token.Type != TokenType.NumVar)
+			if (CommandToken.Children.Count == 0 && ParameterBuffer.Count == 0 && token.Type != TokenType.NumVar && token.Type != TokenType.Array)
 				throw new ParseException(token, MessageID.ERR_NUMVAR_EXPECTED);
 			
 			// for %VAR=NUM to NUM [step NUM]
@@ -295,11 +324,19 @@ public static partial class Parser
 			while (!line.ReachedEnd)
 			{
 				Token token = null;
-				if (state.CurrentCommandType != ParseState.CommandType.Dialog)
-					token = ReadNextToken(line, state);
-				else
+				if (state.CurrentCommandType != null && state.CurrentCommandType == ParseState.CommandType.Dialog)
 					token = ReadNextDialogToken(line, state);
-				ParseToken(token, state);
+				else
+					token = ReadNextToken(line, state);
+				if (token == null)
+					continue;
+				if (token.Type == TokenType.Name)
+				{
+					if (state.IsCommandExpected)
+						token.Type = TokenType.Command;
+					else if (token.Value == "mod")
+						token.Type = TokenType.Operator;
+				}
 				state.PushToken(token);
 			}
 		
@@ -313,20 +350,11 @@ public static partial class Parser
 		}
 	}
 	
-	private static void ParseToken(Token token, ParseState state)
+	private static Token ReadNextDialogToken(Line line, ParseState state)
 	{
-		if (token.Type == TokenType.Name)
-		{
-			if (state.IsCommandExpected)
-				token.Type = TokenType.Command;
-			else if (token.Value == "mod")
-				token.Type = TokenType.Operator;
-		}
-	}
-	
-	private static Token ReadNextDialogToken(Line line, ParseState state, bool readingInlineCmd)
-	{
-		throw new NotImplementedException();
+		// @TODO: Сделать получше
+		int startCol = line.Column;
+		return new Token(TokenType.Raw, line.ReadRest(), startCol);
 	}
 	
 	private static Token? ReadNextToken(Line line, ParseState state)

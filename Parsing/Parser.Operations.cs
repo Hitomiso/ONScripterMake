@@ -52,7 +52,7 @@ public static partial class Parser
 					break;
 				case TokenType.OpenBracket:
 					List<Token> bracketsContent = ReadRoundBrackets(tokens, i);
-					tokens.Insert(i, ParseLogicExpression(bracketsContent));
+					tokens.Insert(i, ParseLogicExpression(ref bracketsContent));
 					break;
 				case TokenType.CloseBracket:
 				case TokenType.OpenSquareBracket:
@@ -75,6 +75,8 @@ public static partial class Parser
 				token.Children.Add(varNumber);
 				return token;
 			case TokenType.Array:
+				if (tokens.Count == 0)
+					throw new ParseException(token, MessageID.ERR_UNEXPECTED_EOL);
 				var arrNumber = ParseNumeric(tokens, startIndex);
 				token.Children.Add(arrNumber);
 				if (tokens[startIndex].Type != TokenType.OpenSquareBracket)
@@ -82,7 +84,7 @@ public static partial class Parser
 				do
 				{
 					List<Token> bracketTokens = ReadSquareBrackets(tokens, startIndex);
-					var arrIndex = ParseArithmeticExpression(bracketTokens);
+					var arrIndex = ParseArithmeticExpression(ref bracketTokens);
 					token.Children.Add(arrIndex);
 					if (startIndex >= tokens.Count)
 						break;
@@ -147,7 +149,7 @@ public static partial class Parser
 		return token;
 	}
 	
-	private static Token ParseArithmeticExpression(List<Token> tokens)
+	private static Token ParseArithmeticExpression(ref List<Token> tokens)
 	{
 		SquishVariables(ref tokens);
 		
@@ -173,12 +175,10 @@ public static partial class Parser
 		
 		if (tokens.Count == 0)
 			throw new NotImplementedException();
-		if (tokens.Count > 1)
-			throw new ParseException();
 		return PopTokenFromList(tokens, 0);
 	}
 	
-	private static Token ParseLogicExpression(List<Token> tokens)
+	private static Token ParseLogicExpression(ref List<Token> tokens)
 	{
 		// Сначала выполняем арифметику между логическими операторами, потом сами логические операторы
 		List<Token> logicExpression = [];
@@ -188,6 +188,8 @@ public static partial class Parser
 			if (token.Type == TokenType.ConditionOperator)
 			{
 				Token expr = ParseArithmeticExpression(ref arithmeticExpression);
+				if (arithmeticExpression.Count > 1)
+					throw new ParseException(arithmeticExpression[1], MessageID.ERR_UNEXPECTED_TOKEN);
 				logicExpression.Add(expr);
 				logicExpression.Add(token);
 				arithmeticExpression.Clear();
@@ -197,6 +199,8 @@ public static partial class Parser
 		}
 		if (arithmeticExpression.Count > 0) {
 			Token expr = ParseArithmeticExpression(ref arithmeticExpression);
+			if (arithmeticExpression.Count > 1)
+				throw new ParseException(arithmeticExpression[1], MessageID.ERR_UNEXPECTED_TOKEN);
 			logicExpression.Add(expr);
 			arithmeticExpression.Clear();
 		}
@@ -207,8 +211,7 @@ public static partial class Parser
 		// @TODO: Унарные операторы можно записать к условным и проверять так же, как минус, чтобы перед ним не было операнда
 		if (logicExpression.Count == 0)
 			throw new NotImplementedException();
-		if (logicExpression.Count > 1)
-			throw new ParseException(tokens[1], MessageID.ERR_);
+		tokens = logicExpression;
 		return PopTokenFromList(logicExpression, 0);
 	}
 	

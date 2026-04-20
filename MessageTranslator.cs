@@ -7,10 +7,11 @@ public static class MessageTranslator
 {
     private static Dictionary<MessageID, string> _translatedMessages = new()
     {
+		{MessageID.ERR_U_STUPIT, "You stupid."},
 		{MessageID.ERR_UNKNOWN_TOKEN, "Can not identify token."},
-        {MessageID.ERR_INVALID_TOKEN_NAME, "Token names must start with an ascii letter or an underscore."},
+	        {MessageID.ERR_INVALID_TOKEN_NAME, "Token names must start with an ascii letter or an underscore."},
 		{MessageID.ERR_INVALID_START_OF_LINE, "Invalid start of line."},
-		{MessageID.ERR_COMMAND_EXPECTED, "Command expected there, but found something else."},
+		{MessageID.ERR_COMMAND_EXPECTED, "Command expected here, but found something else."},
 		{MessageID.ERR_COMMANDS_NOT_ALLOWED, "Commands are not allowed in this context."},
 		{MessageID.ERR_UNEXPECTED_BRACKET, "This bracket was not expected here."},
 		{MessageID.ERR_NOT_A_NUMBER, "Numeric value expected, but this is not a number."},
