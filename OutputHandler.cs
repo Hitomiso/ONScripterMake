@@ -43,13 +43,16 @@ public static class OutputHandler
 
         string trimmed = ex.Line.Content.Replace("\t", " ").Trim();
         int underlineStart = ex.ErrorStartColumn - (ex.Line.Content.Length - trimmed.Length);
+	int lineRepeatCount = ex.Line.Column - ex.ErrorStartColumn;
 
         PrintMessage(ex.Line.ToFileReference(), "error: ", ConsoleColor.Red, ex.Message);
         Console.WriteLine(PADDING_STRING + trimmed);
         StringBuilder underline = new();
-        underline.Append(' ', underlineStart);
+	if (underlineStart >= 0)
+	        underline.Append(' ', underlineStart);
         underline.Append('^');
-        underline.Append('~', ex.Line.Column - ex.ErrorStartColumn);
+	if (lineRepeatCount >= 0)
+	        underline.Append('~', lineRepeatCount);
         Console.ForegroundColor = ConsoleColor.Red;
         Console.WriteLine(PADDING_STRING + underline);
         Console.ResetColor();
