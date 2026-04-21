@@ -1,0 +1,6 @@
+bin
+obj
+.vs
+ONSMake.sln
+Properties
+test*.bat
