@@ -1,0 +1,1 @@
+Drop your onscripter-ru-dev.exe here.

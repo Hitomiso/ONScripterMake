@@ -1,0 +1,151 @@
+;mode1920@2172,1500,value2500
+;gameid PongExample
+*define
+globalon
+
+;Variables
+mov %0,0
+numalias t1,%0 : inc %0
+numalias t2,%0 : inc %0
+numalias t3,%0 : inc %0
+numalias t4,%0 : inc %0
+numalias t5,%0 : inc %0
+numalias t6,%0 : inc %0
+numalias x,%0 : inc %0
+numalias y,%0 : inc %0
+numalias w,%0 : inc %0
+numalias h,%0 : inc %0
+
+numalias ply_y,%0 : inc %0
+numalias enm_y,%0 : inc %0
+numalias ball_x,%0 : inc %0
+numalias ball_y,%0 : inc %0
+numalias ball_xspd,%0 : inc %0
+numalias ball_yspd,%0 : inc %0
+numalias pings,%0 : inc %0 ; Number of ball hits
+
+numalias pscore,%0 : inc %0
+numalias escore,%0 : inc %0
+numalias winner,%0 : inc %0
+
+; Sprites
+mov %0,1
+numalias msg_sp,%0 : inc %0
+numalias ply_sp,%0 : inc %0
+numalias enm_sp,%0 : inc %0
+numalias ball_sp,%0 : inc %0
+numalias pscore_sp,%0 : inc %0
+numalias escore_sp,%0 : inc %0
+numalias line_sp,%0 : inc %0
+
+; Constants
+numalias line_width,8
+numalias box_width,40
+numalias box_height,200
+numalias ball_size,40
+numalias ball_speed,15
+numalias ball_speedup,4
+numalias enm_speed,15
+numalias gap,100
+
+defsub rect
+
+caption "Pong"
+
+game
+*start
+setfps 60
+csp -1
+rect ply_sp,"#FFFFFF",0,0,box_width,box_height
+rect enm_sp,"#FFFFFF",1920-box_width,0,box_width,box_height
+rect ball_sp,"#FFFFFF",960,540,ball_size,ball_size
+mov %t4,0
+*line_loop
+    mov %t5,%t4 * 3 * line_width
+    rect line_sp+%t4,"#FFFFFF",960-line_width/2,%t5,line_width,line_width
+    inc %t4
+if %t5 < 1080 goto *line_loop
+gosub *reset_ball
+gosub *update_score
+
+lsp2 msg_sp,":s;#FFFFFF`{e:1000:{f:0:CLICK}}",960,540
+print 1
+click
+csp2 msg_sp
+
+lr_trap *exit_trap
+*gameloop
+    ; Update ball position
+    add %ball_x,%ball_xspd
+    add %ball_y,%ball_yspd
+    if %ball_y < 0 mov %ball_y,0 : mul %ball_yspd,-1
+    if %ball_y + ball_size > 1080 mov %ball_y,1080-ball_size : mul %ball_yspd,-1
+    if %ball_x < box_width && %ball_y + ball_size > %ply_y && %ball_y < %ply_y + box_height : mov %ball_x,box_width : mul %ball_xspd,-1 : gosub *speedup
+    if %ball_x > 1920-box_width-ball_size && %ball_y + ball_size > %enm_y && %ball_y < %enm_y + box_height : mov %ball_x,1920-box_width-ball_size : mul %ball_xspd,-1 : gosub *speedup
+    amsp ball_sp,%ball_x,%ball_y
+
+    if %ball_x + ball_size < 0 inc %escore : mov %winner,1 : gosub *reset_ball : gosub *update_score : wait 1000
+    if %ball_x > 1920 inc %pscore : mov %winner,0 : gosub *reset_ball : gosub *update_score : wait 1000
+
+    ; Update player position
+    getmousepos %t1,%t2
+    mov %ply_y,%t2-box_height/2
+    if %ply_y < gap mov %ply_y,gap
+    if %ply_y + box_height > 1080-gap mov %ply_y,1080 - box_height - gap
+    aspt ypos,ply_sp,%ply_y
+
+    ; Update enemy position
+    if %ball_y > %enm_y + box_height/2 add %enm_y,enm_speed : jumpf
+    if %ball_y < %enm_y + box_height/2 sub %enm_y,enm_speed : jumpf
+    ~
+    if %enm_y < gap mov %enm_y,gap
+    if %enm_y + box_height > 1080-gap mov %enm_y,1080 - box_height - gap
+    aspt ypos,enm_sp,%enm_y
+
+    ; Update screen
+    print2 1
+goto *gameloop
+*exit_trap
+yesnobox %t6,"Do you want to exit the game?","Already done?"
+if %t6 != 1 lr_trap *exit_trap : goto *gameloop
+
+end
+
+*update_score
+    itoa $pscore,%pscore
+    itoa $escore,%escore
+    lsp2 pscore_sp,":s;#FFFFFF`{e:1000:{f:0:"+$pscore+"}}",480,60
+    lsp2 escore_sp,":s;#FFFFFF`{e:1000:{f:0:"+$escore+"}}",1440,60
+    print 1
+return
+
+*reset_ball
+    mov %pings,0
+    mov %ball_x,960-ball_size/2
+    mov %ball_y,540-ball_size/2
+    if %winner == 0 mov %ball_xspd,ball_speed
+    if %winner == 1 mov %ball_xspd,-1 * ball_speed
+    rnd2 %t1,0,1
+    if %t1 == 0 mov %ball_yspd,-1 * ball_speed
+    if %t1 == 1 mov %ball_yspd,ball_speed
+    amsp ball_sp,%ball_x,%ball_y
+return
+
+*speedup
+    inc %pings
+    mov %t1,ball_speed + %pings * ball_speedup
+    if %ball_xspd < 0 mov %ball_xspd,-1 * %t1 : jumpf
+    if %ball_xspd > 0 mov %ball_xspd,%t1 : jumpf
+    ~
+    rnd2 %t2,-1*%t1,%t1
+    mov %ball_yspd,%t2
+return
+
+; sprite, color, x, y, w, h
+*rect
+    getparam %t1,$t2,%x,%y,%w,%h
+    itoa $w,%w
+    itoa $h,%h
+    mov $t1,":c;>"+$w+","+$h+","+$t2
+    lsp %t1,$t1,%x,%y
+return

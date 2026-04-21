@@ -1,0 +1,45 @@
+namespace Hitomiso.ONScripterMake.Lexer;
+
+public enum TokenType
+{
+    Comment,
+    JumpPoint,
+    Identifier,
+    Number,
+    String,
+	Color,
+	Dialog,
+    InlineWaitCommand,
+    InlineDelayCommand,
+    DialogClickWait,
+	DialogPageWait,
+	DialogContinueScript,
+	DialogSuspend,
+    DialogVoiceWait,
+    Left,
+    Right,
+    SLeft,
+    SRight,
+    Variable,
+	IndexVariable,
+    Comma,
+    Colon,
+	// Operators
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Less,
+    LessOrEqual,
+    Equal,
+    NotEqual,
+    GreaterOrEqual,
+    Greater,
+    Or,
+    And,
+	// Preprocessor directive
+	Directive,
+	// Parsed tokens' types only, lexer should not return lexems with these types
+	ParsedLabel,
+	ParsedModulo,
+}

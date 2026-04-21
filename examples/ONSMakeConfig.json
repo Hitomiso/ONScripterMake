@@ -1,0 +1,5 @@
+{
+	"options": ["-y"],
+	"output": "game-release\\0.txt",
+	"commands": "ons-ru.json"
+}
