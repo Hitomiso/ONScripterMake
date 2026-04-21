@@ -9,7 +9,7 @@ public static class MessageTranslator
     {
 		{MessageID.ERR_U_STUPIT, "You stupid."},
 		{MessageID.ERR_UNKNOWN_TOKEN, "Can not identify token."},
-	        {MessageID.ERR_INVALID_TOKEN_NAME, "Token names must start with an ascii letter or an underscore."},
+		{MessageID.ERR_INVALID_TOKEN_NAME, "Token names must start with an ascii letter or an underscore."},
 		{MessageID.ERR_INVALID_START_OF_LINE, "Invalid start of line."},
 		{MessageID.ERR_COMMAND_EXPECTED, "Command expected here, but found something else."},
 		{MessageID.ERR_COMMANDS_NOT_ALLOWED, "Commands are not allowed in this context."},
@@ -41,8 +41,8 @@ public static class MessageTranslator
         {MessageID.ERR_MULTIPLE_STRALIAS_DEFINITIONS, "Multiple '{0}' stralias definitions. First one was in {1}."},
         {MessageID.ERR_MULTIPLE_LABEL_DEFINITIONS, "Multiple '{0}' label definitions. First one was in {1}."},
         {MessageID.ERR_MULTIPLE_COMMAND_DEFINITIONS, "Multiple '{0}' command definitions. First one was in {1}."},
-        {MessageID.ERR_NUMALIAS_TO_STRALIAS_REDEFINITION, "Redefining numalias '{0}' from {1} as stralias."},
-        {MessageID.ERR_STRALIAS_TO_NUMALIAS_REDEFINITION, "Redefining stralias '{0}' from {1} as numalias."},
+        // {MessageID.ERR_NUMALIAS_TO_STRALIAS_REDEFINITION, "Redefining numalias '{0}' from {1} as stralias."},
+        // {MessageID.ERR_STRALIAS_TO_NUMALIAS_REDEFINITION, "Redefining stralias '{0}' from {1} as numalias."},
         {MessageID.ERR_STRING_NOT_CLOSED, "String literal is not closed. Please count your quotes."},
         {MessageID.ERR_LABEL_NOT_FOUND, "Label '{0}' not found."},
         {MessageID.ERR_DIALOG_BETWEEN_NVL_DIRECTIVES, "Can not use dialog commands while building NVL dialog. Use #end first."},
@@ -52,6 +52,7 @@ public static class MessageTranslator
         {MessageID.ERR_MISSING_DLG_AUTOLABEL_ARGUMENT, "dlg_autolabel needs 1 argument. 0 received."},
         {MessageID.ERR_INVALID_DLG_AUTOLABEL_ARGUMENT, "Invalid dlg_autolabel argument."},
         {MessageID.ERR_USE_N_DIRECTIVE_FIRST, "Use #n to start NVL dialog first."},
+		{MessageID.ERR_UNKNOWN_COMMAND, "Unknown command '{0}'"},
 
         {MessageID.ASK_OVERWRITE_FILE, "File '{0}' already exists. Overwrite?"},
     };

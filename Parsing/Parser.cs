@@ -80,21 +80,6 @@ public static partial class Parser
 		
 	private class ParseState
 	{
-		/*private readonly Dictionary<CommandType, Action<Token>> PARAMETER_PUSH_HANDLERS = new ()
-		{
-			{CommandType.Regular, PushRegularParameter},
-			{CommandType.Branch, PushBranchParameter},
-			{CommandType.ForLoop, PushForLoopParameter},
-			{CommandType.Dialog, PushDialogParameter},
-			{CommandType.Directive, PushDirectiveParameter}
-		};*/
-		/*private readonly Dictionary<CommandType, Action> PARAMETER_SAVE_HANDLERS = new ()
-		{
-			{CommandType.Regular, SaveRegularParameter},
-			{CommandType.Branch, SaveBranchParameter},
-			{CommandType.ForLoop, SaveRegularParameter},
-		};*/
-
 		private readonly TokenType[] TOKENS_NOT_BEFORE_COMMAND = 
 		[
 			TokenType.NumVar,
@@ -146,7 +131,7 @@ public static partial class Parser
 					LastToken = token;
 					return;
 				}
-			}	
+			}
 			
 			if (CurrentCommandType != CommandType.Dialog)
 			{

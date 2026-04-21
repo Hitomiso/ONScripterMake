@@ -33,7 +33,7 @@ public partial class ScriptProcessor
     private Dictionary<string, Line> _labels = [];
     private Dictionary<string, Line> _customCommands = [];
 
-    private List<CommandCall> _commandCalls = [];
+    private List<(Token commandToken, Line calledAt)> _commandCalls = [];
 
     public ScriptProcessor(ProjectConfiguration config)
     {
@@ -129,11 +129,26 @@ public partial class ScriptProcessor
 			}
             // Надо прочитать getparams сразу после метки, но мне лень
         }
-        // Console.WriteLine("Command calls:");
-        // foreach (CommandCall call in _commandCalls)
-        // {
-        // Console.WriteLine(call.CommandName + " " + call.Parameters);
-        // }
+		
+		if (_config.EngineCommands == null)
+			return;
+		HashSet<string> defaultCommandNames = [];
+		foreach (Command cmd in _config.EngineCommands)
+			defaultCommandNames.Add(cmd.Name);
+        foreach (var call in _commandCalls)
+        {
+			string cmdName = call.Item1.Value;
+			if (_customCommands.ContainsKey(cmdName))
+				continue;
+			if (cmdName.StartsWith("_"))
+				cmdName = cmdName[1..];
+			if (!defaultCommandNames.Contains(cmdName))
+			{
+				call.calledAt.Column = call.commandToken.StartColumn + call.commandToken.Value.Length - 1;
+				var ex = new PreprocessException(call.calledAt, call.commandToken.StartColumn, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
+				OutputHandler.PrintPreprocessException(ex);
+			}
+        }
     }
 	
 	private string[] ProcessLine(Line line)
@@ -209,9 +224,7 @@ public partial class ScriptProcessor
 			case TokenType.Command:
 			case TokenType.Dialog:
 				ProcessCommand(token, line);
-				// Записываем вызов команды с параметрами в список
-				// CommandCall call = new(line, token);
-				// _commandCalls.Add(call);
+				_commandCalls.Add((token, line));
 				break;
 		}
     }
@@ -256,8 +269,8 @@ public partial class ScriptProcessor
 				param = token.Children[0].Value;
 				if (_numaliases.ContainsKey(param))
 					throw new PreprocessException(line, token.Children[0], MessageID.ERR_MULTIPLE_NUMALIAS_DEFINITIONS, param, _numaliases[param].ToFileReference());
-				if (_straliases.ContainsKey(param))
-					throw new PreprocessException(line, token.Children[0], MessageID.ERR_STRALIAS_TO_NUMALIAS_REDEFINITION, param, _straliases[param].ToFileReference());
+				// if (_straliases.ContainsKey(param))
+					// throw new PreprocessException(line, token.Children[0], MessageID.ERR_STRALIAS_TO_NUMALIAS_REDEFINITION, param, _straliases[param].ToFileReference());
 				_numaliases.Add(param, line);
 				break;
 			case "stralias":
@@ -266,8 +279,8 @@ public partial class ScriptProcessor
 				param = token.Children[0].Value;
 				if (_straliases.ContainsKey(param))
 					throw new PreprocessException(line, token.Children[0], MessageID.ERR_MULTIPLE_STRALIAS_DEFINITIONS, param, _straliases[param].ToFileReference());
-				if (_numaliases.ContainsKey(param))
-					throw new PreprocessException(line, token.Children[0], MessageID.ERR_NUMALIAS_TO_STRALIAS_REDEFINITION, param, _numaliases[param].ToFileReference());
+				// if (_numaliases.ContainsKey(param))
+					// throw new PreprocessException(line, token.Children[0], MessageID.ERR_NUMALIAS_TO_STRALIAS_REDEFINITION, param, _numaliases[param].ToFileReference());
 				_straliases.Add(param, line);
 				break;
 			case "d":

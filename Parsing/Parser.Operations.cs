@@ -157,17 +157,20 @@ public static partial class Parser
 		if (tokens.Count > 0 && tokens[0].Type == TokenType.Operator)
 		{
 			operatorToken = tokens[0];
-			if (operatorToken.Value == "-")
+			if (operatorToken.Children.Count == 0)
 			{
-				// Вставляем 2 токена вместо 1 минуса
-				tokens[0] = new Token(TokenType.NumConst, "-1", operatorToken.StartColumn);
-				tokens.Insert(1, new Token(TokenType.Operator, "*", operatorToken.StartColumn));
-			}
-			else if (tokens.Count >= 2 && operatorToken.Value == "*" && tokens[1].Type == TokenType.Name)
-			{
-				tokens[1].Value = "*" + tokens[1].Value;
-				tokens[1].Type = TokenType.Label;
-				tokens.RemoveAt(0);
+				if (operatorToken.Value == "-")
+				{	
+					// Вставляем 2 токена вместо 1 минуса
+					tokens[0] = new Token(TokenType.NumConst, "-1", operatorToken.StartColumn);
+					tokens.Insert(1, new Token(TokenType.Operator, "*", operatorToken.StartColumn));
+				}
+				else if (tokens.Count >= 2 && operatorToken.Value == "*" && tokens[1].Type == TokenType.Name)
+				{
+					tokens[1].Value = "*" + tokens[1].Value;
+					tokens[1].Type = TokenType.Label;
+					tokens.RemoveAt(0);
+				}
 			}
 		}
 		
