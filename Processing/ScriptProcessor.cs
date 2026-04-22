@@ -105,52 +105,7 @@ public partial class ScriptProcessor
         }
         return output.ToArray();
     }
-	
-	public void CheckMemorizedCommandCalls()
-    {
-        if (_config.NoScriptCheck)
-            return;
-
-        foreach (var cmd in _customCommands)
-        {
-            try
-            {
-                string routineLabel = "*" + cmd.Key;
-                if (!_labels.ContainsKey(routineLabel))
-                    throw new PreprocessException(cmd.Value, 0, MessageID.ERR_LABEL_NOT_FOUND, routineLabel);
-            }
-            catch (PreprocessException ex)
-            { 
-				if (ex.MessageID == null)
-                    OutputHandler.PrintPreprocessException(ex);
-                else
-                if (!_pragmaDisableAllErrors && !_pragmaDisabledErrors.Contains((MessageID)ex.MessageID))
-                    OutputHandler.PrintPreprocessException(ex);
-			}
-            // Надо прочитать getparams сразу после метки, но мне лень
-        }
 		
-		if (_config.EngineCommands == null)
-			return;
-		HashSet<string> defaultCommandNames = [];
-		foreach (Command cmd in _config.EngineCommands)
-			defaultCommandNames.Add(cmd.Name);
-        foreach (var call in _commandCalls)
-        {
-			string cmdName = call.Item1.Value;
-			if (_customCommands.ContainsKey(cmdName))
-				continue;
-			if (cmdName.StartsWith("_"))
-				cmdName = cmdName[1..];
-			if (!defaultCommandNames.Contains(cmdName))
-			{
-				call.calledAt.Column = call.commandToken.StartColumn + call.commandToken.Value.Length - 1;
-				var ex = new PreprocessException(call.calledAt, call.commandToken.StartColumn, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
-				OutputHandler.PrintPreprocessException(ex);
-			}
-        }
-    }
-	
 	private string[] ProcessLine(Line line)
 	{
 		var tokens = Parser.ParseLine(line);

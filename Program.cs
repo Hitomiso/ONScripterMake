@@ -25,7 +25,7 @@ public static class Program
 	}
 
     private static ProjectConfiguration _config = new();
-
+	
     public static void Main(string[] args)
     {
         if (!ParseArguments(args))
@@ -80,7 +80,8 @@ public static class Program
                 outputContent.AddRange(outLines);
             }
 			if (!_config.Raw)
-				preproc.CheckMemorizedCommandCalls();
+				// preproc.CheckMemorizedCommandCalls();
+				CommandCallChecker.
 
             // Вывод ошибки сборки, если есть
             if (OutputHandler.Errors > 0)
