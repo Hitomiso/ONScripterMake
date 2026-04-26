@@ -9,7 +9,7 @@ using Hitomiso.ONScripterMake.Parsing;
 
 namespace Hitomiso.ONScripterMake.Processing;
 
-public class CommandCallChecker
+public partial class CommandCallChecker
 {
 	private readonly Dictionary<TokenType, Action> TOKEN_CHILDREN_HANDLERS = new()
 	{
@@ -25,13 +25,64 @@ public class CommandCallChecker
 		{TokenType.ConditionOperator, CheckConditionOperator},
 		{TokenType.Color, CheckNoChildren},
 	};
+	private readonly Dictionary<DataType, Action> CAN_CONVERT_HANDLERS = new ()
+	{
+		{DataType.Name, CheckCanConvertToName},
+		{DataType.Label, CheckCanConvertToLabel},
+		{DataType.Num, CheckCanConvertToNum},
+		{DataType.Str, CheckCanConvertToStr},
+		{DataType.NumVar, CheckCanConvertToNumVar},
+		{DataType.StrVar, CheckCanConvertToStrVar},
+		{DataType.Color, CheckCanConvertToColor},
+		{DataType.Effect, CheckCanConvertToEffect},
+		{DataType.Enum, CheckCanConvertToEnum},
+		{DataType.Condition, CheckCanConvertToCondition},
+	};
+	
+	private enum ExpressionType
+	{
+		Num,
+		Str
+	}
 	
 	public void CheckMemorizedCommandCalls()
     {
         if (_config.NoScriptCheck)
             return;
 
-        foreach (var cmd in _customCommands)
+        CheckCustomCommandRoutines();
+		
+		if (_config.EngineCommands == null)
+			return;
+		
+        foreach (var call in _commandCalls)
+        {
+			string cmdName = call.commandToken.Value;
+			if (_customCommands.ContainsKey(cmdName))
+				continue; // Кастомные команды пропускаем
+			if (cmdName.StartsWith("_"))
+				cmdName = cmdName[1..];
+			
+			try
+			{
+				var cmdDefinition = _config.EngineCommands.Find(el => el.Name == cmdName);
+				if (cmdDefinition == null)
+				{
+					call.calledAt.Column = call.commandToken.StartColumn + call.commandToken.Value.Length - 1;
+					throw new PreprocessException(call.calledAt, call.commandToken.StartColumn, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
+				}
+				CheckCommandParameters(call.commandToken, cmdDefinition);
+			}
+			catch (PreprocessException ex)
+			{
+				OutputHandler.PrintPreprocessException(ex);
+			}
+        }
+    }
+	
+	private void CheckCustomCommandRoutines()
+	{
+		foreach (var cmd in _customCommands)
         {
             try
             {
@@ -47,65 +98,112 @@ public class CommandCallChecker
                 if (!_pragmaDisableAllErrors && !_pragmaDisabledErrors.Contains((MessageID)ex.MessageID))
                     OutputHandler.PrintPreprocessException(ex);
 			}
-            // Надо прочитать getparams сразу после метки, но мне лень
+            // @TODO: Надо прочитать getparams сразу после метки, но мне лень
         }
-		
-		if (_config.EngineCommands == null)
-			return;
-		// HashSet<string> defaultCommandNames = [];
-		// foreach (Command cmd in _config.EngineCommands)
-			// defaultCommandNames.Add(cmd.Name);
-        foreach (var call in _commandCalls)
-        {
-			string cmdName = call.commandToken.Value;
-			if (_customCommands.ContainsKey(cmdName))
-				continue; // Пропускаем пока кастомные команды
-			if (cmdName.StartsWith("_"))
-				cmdName = cmdName[1..];
-			
-			var cmdDefinition = _config.EngineCommands.Find(el => el.Name == cmdName);
-			// Выкидываем ошибку несуществующей команды
-			if (cmdDefinition == null)
-			{
-				call.calledAt.Column = call.commandToken.StartColumn + call.commandToken.Value.Length - 1;
-				var ex = new PreprocessException(call.calledAt, call.commandToken.StartColumn, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
-				OutputHandler.PrintPreprocessException(ex);
-				continue;
-			}
+	}
+	
+	private void CheckCommandParameters(Token commandToken, Command definition)
+	{
+		// @TODO: Перегрузки стандартных команд
+		for (int i = 0; i < commandToken.Children.Count; i++)
+		{
+			// Сравниваем имеющиеся параметры с ожидаемыми
+			if (i >= definition.Parameters.Count)
+				throw new PreprocessException(MessageID.ERR_TOO_MANY_PARAMETERS);
+			Parameter param = definition.Parameters[i];
 			
 			try
 			{
-				CheckCommandParameters(call.commandToken, cmdDefinition);
+				IsParameterAcceptable(commandToken.Children[i], definition.Parameters[i]);
+				if (!CheckDataType(commandToken.Children[i], param.DataType, out var errorMessageId))
+				{
+					throw new PreprocessException(MessageID.ERR_);
+				}
 			}
 			catch (PreprocessException ex)
 			{
 				OutputHandler.PrintPreprocessException(ex);
 			}
-        }
-    }
-	
-	private void CheckCommandParameters(Token commandToken, Command definition)
-	{
-		// @TODO: Проверить параметры стандартной команды
-		// @TODO: Перегрузки стандартных команд
-		for (int i = 0; i < commandToken.Children.Count; i++)
-		{
-			if (i >= definition.Parameters.Count)
-				throw new PreprocessException();
-			CheckTokenChildren(commandToken.Children[i]);
-			Parameter param = definition.Parameters[i];
-			
-			if (!CheckDataType(commandToken.Children[i], param.DataType, out var errorMessageId))
-			{
-				throw new PreprocessException();
-			}
 		}
 	}
 	
-	private bool CheckTokenChildren(Token token, DataType expectedDataType)
+	private void CheckIsParameterAcceptable(Token token, Parameter definition)
+	{
+		if (token.Type == TokenType.Operator)
+		{
+			if (definition.Type != DataType.Num && definition.Type != DataType.Str)
+				throw new PreprocessException(MessageID.ERR_EXPRESSIONS_NOT_ALLOWED);
+			var expressionType = definition.Type == DataType.Num;
+			CheckArithmeticExpressionType(token, expressionType);
+			return;
+		}
+		if (token.Type == TokenType.ConditionOperator)
+		{
+			if (definition.Type != DataType.Condition)
+				throw new PreprocessException(MessageID.ERR_CONDITIONS_NOT_ALLOWED);
+			CheckLogicExpression(token);
+			return;
+		}
+		CheckTokenChildren(token);
+		return CheckCanConvert(token, definition.Type);
+	}
+	
+	private void CheckArithmeticExpressionType(Token operatorToken, bool isNumeric)
+	{
+		if (operatorToken.Children.Count != 2)
+			throw new PreprocessException(MessageID.ERR_INCORRECT_NUM_OF_OPERANDS);
+		var opA = operatorToken.Children[0];
+		var opB = operatorToken.Children[1];
+		// Строковые операнды принимает только оператор +
+		if (!isNumeric && operandToken.Value != "+")
+			throw new PreprocessException(MessageID.ERR_);
+		CheckExpressionOperand(opA, isNumeric);
+		CheckExpressionOperand(opB, isNumeric);
+	}
+	
+	private void CheckExpressionOperand(Token operandToken, bool isNumeric)
+	{
+		if (operandToken.Type == TokenType.Operator)
+		{
+			CheckArithmeticExpressionType(operandToken, isNumeric);
+			return;
+		}
+		CheckTokenChildren(operandToken);
+		if (operandToken.Type == TokenType.Name)
+		{
+			if (isNumeric)
+			{
+				if (!_numaliases.ContainsKey(operandToken.Value))
+					throw new PreprocessException(MessageID.ERR_NUMALIAS_NOT_DEFINED);
+			}
+			else
+			{
+				if (!_straliases.ContainsKey(operandToken.Value))
+					throw new PreprocessException(MessageID.ERR_STRALIAS_NOT_DEFINED);
+			}
+			return;
+		}
+		if (isNumeric)
+		{
+			if (!CheckIsNumeric(operandToken))
+				throw new PreprocessException(MessageID.ERR_NOT_A_NUMBER);
+		}
+		else
+		{
+			if (!CheckIsString(operandToken))
+				throw new PreprocessException(MessageID.ERR_NOT_A_STRING);
+		}
+	}
+	
+	private void CheckLogicExpression(Token operatorToken)
+	{
+		// @TODO: Разделать логические операторы и операторы сравнения
+	}
+	
+	private void CheckTokenChildren(Token token)
 	{
 		if (!TOKEN_CHILDREN_HANDLERS.ContainsKey(token.Type))
-			throw new PreprocessException();
+			throw new PreprocessException(MessageID.ERR_);
 		TOKEN_CHILDREN_HANDLERS[token.Type](token.Children);
 	}
 	
@@ -115,35 +213,40 @@ public class CommandCallChecker
 			throw new PreprocessException();
 	}
 	
-	private void CheckVariable(List<Token> children)
+	private void CheckVariableChildren(List<Token> children)
 	{
-		if (children.Count > 1)
+		if (children.Count != 1)
 			throw new PreprocessException();
 		if (!CheckIsNumeric(children[0]))
 		{
 			// @TODO: Проверить нумалиас
 			if (children[0].Type == TokenType.Name)
-				
+			{
+				if (!_numaliases.ContainsKey(children[0].Value))
+					throw new PreprocessException(MessageID.ERR_NUMALIAS_NOT_DEFINED);
+			}
+			else
+			{
+				// @TODO: А если это выражение?
+				if (!CheckIsNumeric(children[0]))
+					// throw new PreprocessException(MessageID.ERR_);
+			}
 		}
 	}
 	
-	private void CheckArray(List<Token> children)
+	private void CheckArrayChildren(List<Token> children)
 	{
-		// 
-	}
-	
-	private void CheckArithmeticOperator(List<Token> children)
-	{
-		// @TODO: Может выдать разные типы
-	}
-	
-	private void CheckConditionOperator(List<Token> children)
-	{
-		// @TODO: Разделять логические операторы и операторы сравнения
+		// @TODO: Сделай!
 	}
 	
 	
-	// private void Check
+	
+	private void CheckCanConvert(Token token, DataType targetType)
+	{
+		if (!CAN_CONVERT_HANDLERS.ContainsKey(targetType))
+			throw new PreprocessException();
+		CAN_CONVERT_HANDLERS[targetType](token);
+	}
 	
 	private bool CheckTokenParameter(Token token, Parameter targetParameter, out MessageID? errorMessageId)
 	{
