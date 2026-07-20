@@ -15,6 +15,7 @@
 `onsmake -o 0.txt`
 
 ## Command line options
+```
 -?
 --help
         Print help message.
@@ -58,20 +59,21 @@
         Do not check output script for command call errors. Parsing and multiple definition errors will still be checked and printed.
 --ignore-errors
         Write the output file even when there are detected errors in script.
+```
 
 ## Available preprocessor directives
-- #dlg_autolabel *<label prefix>
+- `#dlg_autolabel *<label prefix>`
 	Automatically inserts unique labels with the given prefix before all `d` and `d2` commands.
 	This is useful for the complex log system in Umineko Project.
-- #dlg_autolabel off
+- `#dlg_autolabel off`
 	Disables auto-insertion of labels before `d` and `d2` commands.
-- #*<label prefix>
+- `#*<label prefix>`
 	Inserts a unique label with the given prefix in place of this directive.
-- #n <some dialog text>
+- `#n <some dialog text>`
 	Starts new page of NVL-dialog. After processing, it becomes a `d2` command call.
-- #e <some dialog text>
+- `#e <some dialog text>`
 	Appends dialog from the #n directive. Lines between #n and #e are automatically surrounded by `wait_on_d` and `d_continue`.
-- #end
+- `#end`
 	Disables NVL-dialog mode, converts all added dialog parts into a single `d2` command call.
 
 ## ONSMakeList.txt example
