@@ -65,7 +65,7 @@ public static class MessageTranslator
         {MessageID.HELP,
             $"{VERSION_STRING}\n" +
             "Script \"build system\" with built-in linter for ONScripter-RU\n" +
-            "Freeware. Licensed with GNU GPL v2\n" +
+            "Freeware. Licensed with GNU GPL v3\n" +
             "by Hitomiso, all lefts reserved.\n" +
             "\n" +
             "Usage:\n" +
