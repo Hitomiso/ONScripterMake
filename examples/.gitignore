@@ -1,3 +1,4 @@
 tools/*
+!tools/README.MD
 game-release/onscripter-ru-dev.exe
 game-release/0.txt

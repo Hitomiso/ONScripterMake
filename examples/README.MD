@@ -5,7 +5,5 @@ If you want to test this example by yourself, please add executables in these di
 |  |--onscripter-ru-dev.exe
 |--tools\
    |--onsmake.exe
-   |--onsmake.dll
-   |--onsmake.runtimeconfig.json
 ```
 To build the game, run the 'build.bat'.
