@@ -1,0 +1,18 @@
+<linker>
+  <assembly fullname="ONSMake">
+    <type fullname="Hitomiso.ONScripterMake.Parser.ArrayState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.CommandState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.DialogParameterState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.ForCounterState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.ForFromState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.ForStepState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.ForToState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.IfParametersState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.InnerExpressionState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.LabelState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.NormalParametersState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.ParserStateHandler" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.StartOfLineState" preserve="all" />
+	<type fullname="Hitomiso.ONScripterMake.Parser.VariableState" preserve="all" />
+  </assembly>
+</linker>
