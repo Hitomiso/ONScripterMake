@@ -135,8 +135,6 @@ public class InnerExpressionState : ParserStateHandler
 
         if (!_isOperatorAwaited)
         {
-            // @FIXME: Скорее всего состояние переменной возвращает переменную, но в функции возврата флаг операнд/оператор не меняется
-            // Или же что-то другое, но из-за состояния переменной
             throw new UnexpectedTokenException(token);
         }
         _parameterBuffer.Add(token);

@@ -27,6 +27,13 @@ public class FinalScriptContext
                 return new SourceCodeMessage(file, pos, name.Length, SourceCodeMessage.MessageType.Error, messageId, messageArgs);
             };
 
+            foreach (string label in file.DefinedLabels.Keys)
+            {
+                if (LabelDefinitions.ContainsKey(label))
+                    messages.Add(makeMultipleDefinitionsError(LabelDefinitions, file.DefinedLabels, label, MessageID.ERR_MULTIPLE_LABEL_DEFINITIONS));
+                else
+                    LabelDefinitions.Add(label, (file, file.DefinedLabels[label]));
+            }
             Dictionary<string, int> autolabelCounters = [];
             foreach (var autolabel in file.Autolabels)
             {
@@ -50,13 +57,6 @@ public class FinalScriptContext
                 file.OutputLines[autolabel.outputLineIndex] = outputLine;
                 LabelDefinitions.Add(labelName, (file, new TextPosition(outputLine.InputLineIndex, 0)));
                 autolabelCounters[prefix] = counter;
-            }
-            foreach (string label in file.DefinedLabels.Keys)
-            {
-                if (LabelDefinitions.ContainsKey(label))
-                    messages.Add(makeMultipleDefinitionsError(LabelDefinitions, file.DefinedLabels, label, MessageID.ERR_MULTIPLE_LABEL_DEFINITIONS));
-                else
-                    LabelDefinitions.Add(label, (file, file.DefinedLabels[label]));
             }
             foreach (string numalias in file.DefinedNumaliases.Keys)
             {
@@ -84,23 +84,22 @@ public class FinalScriptContext
         foreach (var cmdDefinition in CustomCommands)
         {
             string routineLabel = "*" + cmdDefinition.Key;
-            if (!LabelDefinitions.ContainsKey(routineLabel))
+            if (LabelDefinitions.TryGetValue(routineLabel, out var def))
+            {
+                // @TODO: Надо прочитать getparams сразу после метки и выделить параметры команды
+                // Ищем первый токен, который не является комментарием
+                // Если это не getparam, то кидаем предупреждение
+            }
+            else
             {
                 SourceCodeMessage labelNotFoundMessage = new
                 (
-                    cmdDefinition.Value.file,
-                    cmdDefinition.Value.pos,
-                    cmdDefinition.Key.Length,
-                    SourceCodeMessage.MessageType.Error,
-                    MessageID.ERR_LABEL_NOT_FOUND,
-                    [routineLabel]
+                    cmdDefinition.Value.file, cmdDefinition.Value.pos, cmdDefinition.Key.Length,
+                    SourceCodeMessage.MessageType.Error, MessageID.ERR_LABEL_NOT_FOUND, [routineLabel]
                 );
                 messages.Add(labelNotFoundMessage);
             }
-            // @TODO: Надо прочитать getparams сразу после метки и выделить параметры команды
         }
         return [.. messages];
     }
-
-    //
 }

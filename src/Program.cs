@@ -33,7 +33,7 @@ public static class Program
 
     private static ProjectConfiguration _config = new();
 
-    private static SourceFileProcessor[] _processedFiles;
+    private static SourceFileProcessor[] _sortedProcessedFiles;
     private static string[] _correctIncludeOrder;
     private static ConcurrentBag<string> _filesToProcess = [];
     private static ConcurrentBag<SourceFileProcessor> _filesToLint = [];
@@ -91,7 +91,14 @@ public static class Program
         FilesProcessingWork();
         foreach (Task t in parallelJobs)
             t.Wait();
-        _processedFiles = [.. _filesToLint];
+
+        // Сортируем обработанные файлы в порядке их включения в скрипт
+        _sortedProcessedFiles = new SourceFileProcessor[_correctIncludeOrder.Length];
+        foreach (SourceFileProcessor file in _filesToLint)
+        {
+            int fileIndex = Array.IndexOf(_correctIncludeOrder, file.FileName);
+            _sortedProcessedFiles[fileIndex] = file;
+        }
 
         // Выводим сообщения из каждого обработанного файла, регистрируем символы и снова выводим
         foreach (SourceFileProcessor procFile in _filesToLint)
@@ -102,25 +109,18 @@ public static class Program
                     OutputHandler.PrintMessage(msg);
             }
         }
+        
         FinalScriptContext _scriptContext = new();
-        foreach (SourceCodeMessage msg in _scriptContext.RegisterDefinitions(_filesToLint))
+        foreach (SourceCodeMessage msg in _scriptContext.RegisterDefinitions(_sortedProcessedFiles))
         {
             if (!CheckIsMessageIgnored(msg))
                 OutputHandler.PrintMessage(msg);
-        }
-        _linter = new OnsLinter(_config.EngineCommands, _scriptContext);
-
-        // Обязательно после регистрации в FinalScriptContext
-        List<ProcessedLine>[] outputScriptLines = new List<ProcessedLine>[_correctIncludeOrder.Length];
-        foreach (SourceFileProcessor file in _processedFiles)
-        {
-            int fileIndex = Array.IndexOf(_correctIncludeOrder, file.FileName);
-            outputScriptLines[fileIndex] = file.OutputLines;
         }
 
         if (!_config.NoCommandCheck)
         {
             // Проверяем скрипт на ошибки
+            _linter = new OnsLinter(_config.EngineCommands, _scriptContext);
             for (int i = 0; i < parallelJobs.Length; i++)
                 parallelJobs[i] = Task.Run(FilesLintingWork);
             FilesLintingWork();
@@ -149,9 +149,9 @@ public static class Program
         }
         using (StreamWriter outputWriter = new(outputPath))
         {
-            foreach (List<ProcessedLine> outputLines in outputScriptLines)
+            foreach (var file in _sortedProcessedFiles)
             {
-                foreach (ProcessedLine line in outputLines)
+                foreach (ProcessedLine line in file.OutputLines)
                     outputWriter.WriteLine(line.OutputLine);
             }
         }
@@ -180,7 +180,7 @@ public static class Program
     private static bool CheckIsMessageIgnored(SourceCodeMessage msg)
     {
         // Находим обработчик файла, где была ошибка
-        SourceFileProcessor? fileProcessor = _processedFiles.FirstOrDefault(el => el.FileName == msg.FileName);
+        SourceFileProcessor? fileProcessor = _sortedProcessedFiles.FirstOrDefault(el => el.FileName == msg.FileName);
         if (fileProcessor == null)
             return false;
 
@@ -249,7 +249,7 @@ public static class Program
 
         if (_config.OverwriteOutputFile == false)
         {
-            if (_config.Silent)
+            if (!_config.Silent)
                 OutputHandler.PrintError($"File '{Path.GetFullPath(_config.OutputFile)}' already exists.");
             return false;
         }
