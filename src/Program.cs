@@ -1,16 +1,11 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
-using System.Linq;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.IO;
-using Hitomiso.ONScripterMake.Lexer;
-using Hitomiso.ONScripterMake.Parser;
-using Hitomiso.ONScripterMake.Linter;
-using Hitomiso.ONScripterMake.Processing;
-using System.Threading;
+using ONSMake.Linter;
+using ONSMake.Processing;
 
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 #nullable enable
 public static class Program
@@ -18,27 +13,7 @@ public static class Program
     private const string DEFAULT_LIST_FILE = "ONSMakeList.txt";
     private const string DEFAULT_CONFIG_FILE = "ONSMakeConfig.json";
 
-    private enum ExitCodes
-    {
-        Help = 0,
-        ArgumentsError,
-        ConfigError,
-        ListError,
-        ScriptError,
-        FileExists,
-        FileNotFound,
-        IOException,
-        UnhandledException = 99,
-    }
-
     private static ProjectConfiguration _config = new();
-
-    private static SourceFileProcessor[] _sortedProcessedFiles;
-    private static string[] _correctIncludeOrder;
-    private static ConcurrentBag<string> _filesToProcess = [];
-    private static ConcurrentBag<SourceFileProcessor> _filesToLint = [];
-    private static ConcurrentBag<SourceCodeMessage[]> _lintingMessages = [];
-    private static OnsLinter _linter;
 
     public static void Main(string[] args)
     {
@@ -46,96 +21,74 @@ public static class Program
         {
             Setup(args);
 
-            bool isListValid = TryFormInputList(out List<string> filesToProcess);
+            bool isListValid = TryFormInputList(out List<string> scriptFiles);
             if (!isListValid && !_config.IgnoreErrors)
-                Abort(ExitCodes.ListError);
-            _correctIncludeOrder = [.. filesToProcess];
-            foreach (string fileName in filesToProcess)
-                _filesToProcess.Add(fileName);
+                Abort(ExitCode.InvalidList);
+            string[] correctIncludeOrder = [.. scriptFiles];
 
             if (_config.Raw)
-                ProcessFilesRaw(_config.OutputFile);
+                ProcessFilesRaw(correctIncludeOrder, _config.OutputFile);
             else
-                ProcessFilesSmart(_config.OutputFile);
+                ProcessFilesSmart(correctIncludeOrder, _config.OutputFile);
             OutputHandler.PrintInfo($"Script saved in {_config.OutputFile}.");
         }
         catch (Exception ex)
         {
             OutputHandler.PrintError(ex.Message, "Unhandled exception");
-            Abort(ExitCodes.UnhandledException);
+            Abort(ExitCode.UnhandledException);
         }
     }
 
-    private static void ProcessFilesRaw(string outputPath)
+    private static void ProcessFilesRaw(string[] scriptFiles, string outputPath)
     {
-        using (StreamWriter outputWriter = new(outputPath))
+        using StreamWriter outputWriter = new(outputPath);
+        foreach (string inputFile in scriptFiles)
         {
-            foreach (string inputFile in _filesToProcess)
-            {
-                foreach (string line in File.ReadLines(inputFile))
-                    outputWriter.WriteLine(line);
-            }
+            foreach (string line in File.ReadLines(inputFile))
+                outputWriter.WriteLine(line);
         }
     }
-
-    private static void ProcessFilesSmart(string outputPath)
+    
+    private static ScriptUnit[] ProcessFilesParallel(string[] filesToProcess, ParallelOptions options)
+    {
+        // Обрабатываем файлы, находим определения
+        ScriptUnit[] sortedUnits = new ScriptUnit[filesToProcess.Length];
+        for (int i = 0; i < filesToProcess.Length; i++)
+            sortedUnits[i] = new ScriptUnit(filesToProcess[i]);
+        Parallel.ForEach(sortedUnits, options, unit =>
+        {
+            ScriptProcessor processor = new(_config);
+            processor.ProcessScriptUnit(unit);
+        });
+        return sortedUnits;
+    }
+    
+    private static void ProcessFilesSmart(string[] scriptFiles, string outputPath)
     {
         int jobsCount = _config.JobsCount ?? Environment.ProcessorCount;
-        if (jobsCount == 0)
-            throw new ApplicationException("Somehow this machine has zero CPUs.");
-        Task[] parallelJobs = new Task[jobsCount - 1];
-
-        // Обрабатываем файлы, находим определения
-        for (int i = 0; i < parallelJobs.Length; i++)
-            parallelJobs[i] = Task.Run(FilesProcessingWork);
-        FilesProcessingWork();
-        foreach (Task t in parallelJobs)
-            t.Wait();
-
-        // Сортируем обработанные файлы в порядке их включения в скрипт
-        _sortedProcessedFiles = new SourceFileProcessor[_correctIncludeOrder.Length];
-        foreach (SourceFileProcessor file in _filesToLint)
+        if (jobsCount <= 0)
+            throw new ApplicationException($"Incorrect parallel jobs count: {jobsCount}.");
+        ParallelOptions parallelOptions = new()
         {
-            int fileIndex = Array.IndexOf(_correctIncludeOrder, file.FileName);
-            _sortedProcessedFiles[fileIndex] = file;
-        }
-
-        // Выводим сообщения из каждого обработанного файла, регистрируем символы и снова выводим
-        foreach (SourceFileProcessor procFile in _filesToLint)
-        {
-            foreach (SourceCodeMessage msg in procFile.ProcessingMessages)
-            {
-                if (!CheckIsMessageIgnored(msg))
-                    OutputHandler.PrintMessage(msg);
-            }
-        }
+            MaxDegreeOfParallelism = jobsCount
+        };
         
-        FinalScriptContext _scriptContext = new();
-        foreach (SourceCodeMessage msg in _scriptContext.RegisterDefinitions(_sortedProcessedFiles))
-        {
-            if (!CheckIsMessageIgnored(msg))
-                OutputHandler.PrintMessage(msg);
-        }
+        ScriptUnit[] unitsToLint = ProcessFilesParallel(scriptFiles, parallelOptions);
+        
+        FinalScriptContext scriptContext = new();
+        scriptContext.RegisterDefinitions(unitsToLint);
 
         if (!_config.NoCommandCheck)
         {
-            // Проверяем скрипт на ошибки
-            _linter = new OnsLinter(_config.EngineCommands, _scriptContext);
-            for (int i = 0; i < parallelJobs.Length; i++)
-                parallelJobs[i] = Task.Run(FilesLintingWork);
-            FilesLintingWork();
-            foreach (Task t in parallelJobs)
-                t.Wait();
+            OnsLinter linter = new(_config.EngineCommands, scriptContext);
+            Parallel.ForEach(unitsToLint, parallelOptions, unit => linter.LintUnit(unit));
+        }
 
-            // Выводим ошибки линтинга
-            foreach (SourceCodeMessage[] messages in _lintingMessages)
-            {
-                foreach (SourceCodeMessage msg in messages)
-                {
-                    if (!CheckIsMessageIgnored(msg))
-                        OutputHandler.PrintMessage(msg);
-                }
-            }
+        // Выводим сообщения из каждого обработанного файла
+        foreach (ScriptUnit procFile in unitsToLint)
+        {
+            foreach (ScriptMessage msg in procFile.ProcessingMessages)
+                OutputHandler.PrintMessage(msg);
         }
 
         // Записываем в выходной файл
@@ -145,62 +98,26 @@ public static class Program
             if (_config.IgnoreErrors)
                 OutputHandler.PrintInfo($"Ignoring errors, writing output anyway...");
             else
-                Abort(ExitCodes.ScriptError);
+                Abort(ExitCode.ScriptError);
         }
         using (StreamWriter outputWriter = new(outputPath))
         {
-            foreach (var file in _sortedProcessedFiles)
+            foreach (var file in unitsToLint)
             {
                 foreach (ProcessedLine line in file.OutputLines)
                     outputWriter.WriteLine(line.OutputLine);
             }
         }
     }
-    
-    private static void FilesProcessingWork()
-    {
-        Thread.CurrentThread.Priority = ThreadPriority.Highest;
-        OnsParser parser = new();
-        while (_filesToProcess.TryTake(out string? fileName))
-        {
-            SourceFileProcessor processor = new(fileName, _config, parser);
-            _filesToLint.Add(processor);
-        }
-    }
-
-    private static void FilesLintingWork()
-    {
-        Thread.CurrentThread.Priority = ThreadPriority.Highest;
-        while (_filesToLint.TryTake(out SourceFileProcessor? processedFile))
-        {
-            _lintingMessages.Add(_linter.LintFile(processedFile));
-        }
-    }
-
-    private static bool CheckIsMessageIgnored(SourceCodeMessage msg)
-    {
-        // Находим обработчик файла, где была ошибка
-        SourceFileProcessor? fileProcessor = _sortedProcessedFiles.FirstOrDefault(el => el.FileName == msg.FileName);
-        if (fileProcessor == null)
-            return false;
-
-        // Находим нужный промежуток строк с игноренными ошибками
-        (int lineIndex, MessageID[] errors)? disabledErrors = fileProcessor.DisabledErrorsHistory.FirstOrDefault(el => el.lineIndex < msg.Position.Line);
-        if (disabledErrors == null || disabledErrors.Value.errors == null)
-            return false;
-
-        // Сравниваем заигноренные ошибки в промежутке с пришедшей ошибкой
-        return disabledErrors.Value.errors.Contains(msg.MessageID);
-    }
 
     private static void Setup(string[] args)
     {
         if (!_config.ParseArguments(args))
-            Abort(ExitCodes.ArgumentsError);
+            Abort(ExitCode.InvalidArgument);
         if (_config.PrintHelp)
         {
             Console.WriteLine(MessageTranslator.GetArgumentedString(MessageID.HELP, []));
-            Abort(ExitCodes.Help);
+            Abort(ExitCode.Help);
         }
 
         try
@@ -212,7 +129,7 @@ public static class Program
             if (_config.ConfigFile != null && !File.Exists(_config.ConfigFile))
             {
                 OutputHandler.PrintError($"Config file '{Path.GetFullPath(_config.ConfigFile)}' not found.");
-                Abort(ExitCodes.FileNotFound);
+                Abort(ExitCode.FileNotFound);
             }
             string configFileName = _config.ConfigFile ?? DEFAULT_CONFIG_FILE;
             if (File.Exists(configFileName))
@@ -220,20 +137,20 @@ public static class Program
                 uint errorsBeforeReadingConfig = OutputHandler.Errors;
                 _config = new ProjectConfiguration(configFileName);
                 if (OutputHandler.Errors != errorsBeforeReadingConfig)
-                    Abort(ExitCodes.ConfigError);
+                    Abort(ExitCode.InvalidConfig);
                 // Репарсим аргументы, чтобы они имели приоритет над конфигом
                 if (!_config.ParseArguments(args))
-                    Abort(ExitCodes.ArgumentsError);
+                    Abort(ExitCode.InvalidArgument);
             }
             OutputHandler.IsSilenced = _config.Silent;
 
             if (!CheckOutputFileOverwrite())
-                Abort(ExitCodes.FileExists);
+                Abort(ExitCode.FileExists);
         }
         catch (IOException ex)
         {
             OutputHandler.PrintError(ex.Message, "IOException");
-            Abort(ExitCodes.IOException);
+            Abort(ExitCode.IOException);
         }
     }
 
@@ -319,7 +236,7 @@ public static class Program
         return AskYN(MessageTranslator.GetArgumentedString(id, args));
     }
 
-    private static void Abort(ExitCodes exitCode)
+    private static void Abort(ExitCode exitCode)
     {
         Environment.Exit((int)exitCode);
     }

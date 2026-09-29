@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 #nullable enable
 public class ProjectConfiguration

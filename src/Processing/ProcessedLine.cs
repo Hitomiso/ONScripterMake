@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake.Lexer;
-using Hitomiso.ONScripterMake.Parser;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Processing;
+namespace ONSMake.Processing;
 
-public struct ProcessedLine
+public record struct ProcessedLine
 {
-	public int InputLineIndex;
+	public readonly int InputLineIndex;
 	public string OutputLine;
 	public readonly List<Token> Lexemes;
 	public readonly List<Token> Tokens;

@@ -1,6 +1,6 @@
-﻿using Hitomiso.ONScripterMake.Lexer;
+﻿using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Processing;
+namespace ONSMake.Processing;
 
 internal class ProcessError
 {

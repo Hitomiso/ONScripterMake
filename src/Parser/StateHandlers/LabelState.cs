@@ -1,34 +1,42 @@
-﻿using Hitomiso.ONScripterMake.Lexer;
+﻿using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Parser;
+namespace ONSMake.Parser;
 
 #nullable enable
 public class LabelState : ParserStateHandler
 {
     private Token _asteriskToken;
 
-    public LabelState(OnsParser parser) : base(parser)
+    public LabelState(ParserContext context) : base(context)
     {
-        _tokenHandlers.Add(TokenType.Identifier, HandleName);
+        _tokenHandlers.Add(TokenType.Identifier, TryHandleName);
     }
 
-    public void Recycle(Token asteriskToken)
+    public void TryRecycle(Token asteriskToken, out bool success)
     {
         if (asteriskToken.Content != "*")
-            throw new UnexpectedTokenException(asteriskToken);
+        {
+            success = false;
+            return;
+        }
         _asteriskToken = asteriskToken;
         IsReady = true;
+        success = true;
     }
 
     public override void OnReturn(Token? returnValue) { }
     public override Token? OnReset(Token? returnValue) => null;
 
-    private void HandleName(Token token)
+    private void TryHandleName(Token token, out bool success)
     {
         if (token.StartColumn != _asteriskToken.StartColumn + 1)
-            throw new UnexpectedTokenException(token);
+        {
+            success = false;
+            return;
+        }
         Token labelToken = new(TokenType.ParsedLabel, "*" + token.Content, _asteriskToken.StartColumn);
-        _parser.PopState(labelToken);
+        _context.PopState(labelToken);
+        success = true;
     }
 }
 #nullable restore

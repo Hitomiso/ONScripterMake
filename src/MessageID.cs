@@ -1,9 +1,9 @@
-﻿namespace Hitomiso.ONScripterMake;
+﻿namespace ONSMake;
 
 public enum MessageID
 {
     ERR_U_STUPIT,
-    ERR_UNKNOWN_TOKEN,
+    ERR_INVALID_TOKEN,
     ERR_NOT_A_NUMBER,
     ERR_NOT_A_NUMVAR,
     ERR_NOT_A_NAME,
@@ -12,6 +12,7 @@ public enum MessageID
     ERR_NOT_A_STRVAR,
 	ERR_NOT_A_DIALOG,
 
+    ERR_QUOTES_NOT_CLOSED,
     ERR_MISSING_FIRST_OPERAND,
     ERR_MISSING_SECOND_OPERAND,
     ERR_INVALID_OPERAND_TYPE,
@@ -55,5 +56,6 @@ public enum MessageID
 
     ASK_OVERWRITE_FILE,
 	INFO_NOTE,
+    POTENTIAL_COMMAND,
     HELP,
 }

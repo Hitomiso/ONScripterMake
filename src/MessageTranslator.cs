@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 public static class MessageTranslator
 {
@@ -10,7 +10,7 @@ public static class MessageTranslator
     private static Dictionary<MessageID, string> _translatedMessages = new()
     {
         {MessageID.ERR_U_STUPIT, "You stupid."},
-        {MessageID.ERR_UNKNOWN_TOKEN, "Can not identify token '{0}'."},
+        {MessageID.ERR_INVALID_TOKEN, "Can not identify token '{0}'."},
         {MessageID.ERR_NOT_A_NUMBER, "Numeric value expected."},
         {MessageID.ERR_NOT_A_NUMVAR, "Numeric variable expected."},
         {MessageID.ERR_NOT_A_NAME, "Name expected."},
@@ -19,6 +19,7 @@ public static class MessageTranslator
         {MessageID.ERR_NOT_A_STRVAR, "String variable expected."},
 		{MessageID.ERR_NOT_A_DIALOG, "Dialog line expected."},
 
+        {MessageID.ERR_QUOTES_NOT_CLOSED, "Quotes are not closed."},
         {MessageID.ERR_MISSING_FIRST_OPERAND, "First operand is missing."},
         {MessageID.ERR_MISSING_SECOND_OPERAND, "Second operand is missing."},
         {MessageID.ERR_INVALID_OPERAND_TYPE, "Invalid operands type."},

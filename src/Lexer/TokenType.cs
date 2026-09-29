@@ -1,4 +1,4 @@
-namespace Hitomiso.ONScripterMake.Lexer;
+namespace ONSMake.Lexer;
 
 public enum TokenType
 {
@@ -42,4 +42,5 @@ public enum TokenType
 	// Parsed tokens' types only, lexer should not return lexems with these types
 	ParsedLabel,
 	ParsedModulo,
+    Invalid
 }

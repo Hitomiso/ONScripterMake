@@ -1,143 +1,99 @@
 using System;
 using System.Linq;
-using System.Net.Http.Headers;
-using Hitomiso.ONScripterMake.Lexer;
-using Hitomiso.ONScripterMake.Parser;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Linter;
+namespace ONSMake.Linter;
 
-#nullable enable
 public partial class OnsLinter
 {
-	private bool CheckCanConvertToName(Token token, out TokenCheckError? error)
+	private Result<object, TokenCheckError> CheckCanConvertToName(Token token)
     {
         if (token.Type != TokenType.Identifier)
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_NAME);
-            return false;
-        }
-        error = null;
-        return true;
+            return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_NAME);
+        return MakeCheckOkResult();
     }
 
-    private bool CheckCanConvertToLabel(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToLabel(Token token)
     {
         if (token.Type == TokenType.ParsedLabel || token.Type == TokenType.String)
         {
             string labelName = token.Content;
             if (token.Type == TokenType.String)
                 labelName = labelName[1..^1];
-            if (!_scriptContext.LabelDefinitions.ContainsKey(labelName))
-            {
-                error = new TokenCheckError(token, MessageID.ERR_LABEL_NOT_FOUND, labelName);
-                return false;
-            }
-            error = null;
-            return true;
+            if (!_scriptContext.Labels.ContainsKey(labelName.ToLower()))
+                return MakeCheckErrorResult(token, MessageID.ERR_LABEL_NOT_FOUND, labelName);
+            return MakeCheckOkResult();
         }
-        if (token.Type != TokenType.Variable || token.Content != "$")
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_LABEL);
-            return false;
-        }
-        error = null;
-        return true;
+        if (token.Type == TokenType.Variable && token.Content == "$")
+			return MakeCheckOkResult();
+        return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_LABEL);
     }
 
-    private bool CheckCanConvertToNum(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToNum(Token token)
     {
-        if (!IsTokenNumeric(token))
-        {
-            if (token.Type == TokenType.Identifier)
-                error = new TokenCheckError(token, MessageID.ERR_NUMALIAS_NOT_DEFINED, token.Content);
-            else
-                error = new TokenCheckError(token, MessageID.ERR_NOT_A_NUMBER);
-            return false;
-        }
-        error = null;
-        return true;
+        if (IsTokenNumeric(token))
+            return MakeCheckOkResult();
+        if (token.Type == TokenType.Identifier)
+            return MakeCheckErrorResult(token, MessageID.ERR_NUMALIAS_NOT_DEFINED, token.Content);
+        else
+            return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_NUMBER);
     }
 
-    private bool CheckCanConvertToStr(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToStr(Token token)
     {
-        if (!IsTokenString(token))
-        {
-            if (token.Type == TokenType.Identifier)
-                error = new TokenCheckError(token, MessageID.ERR_STRALIAS_NOT_DEFINED, token.Content);
-            else
-                error = new TokenCheckError(token, MessageID.ERR_NOT_A_STRING);
-            return false;
-        }
-        error = null;
-        return true;
+        if (IsTokenString(token))
+			return MakeCheckOkResult();
+		if (token.Type == TokenType.Identifier)
+			return MakeCheckErrorResult(token, MessageID.ERR_STRALIAS_NOT_DEFINED, token.Content);
+		else
+			return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_STRING);        
     }
 
-    private bool CheckCanConvertToNumVar(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToNumVar(Token token)
     {
-		if (token.Type != TokenType.Variable || (token.Content != "%" && token.Content != "?"))
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_NUMVAR);
-            return false;
-        }
-        error = null;
-        return true;
+		if (token.Type == TokenType.Variable && (token.Content == "%" || token.Content == "?"))
+			return MakeCheckOkResult();
+        return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_NUMVAR);
     }
 
-    private bool CheckCanConvertToStrVar(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToStrVar(Token token)
     {
-        if (token.Type != TokenType.Variable || token.Content != "$")
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_STRVAR);
-            return false;
-        }
-        error = null;
-        return true;
+        if (token.Type == TokenType.Variable && token.Content == "$")
+			return MakeCheckOkResult();
+        return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_STRVAR);
     }
 
-    private bool CheckCanConvertToColor(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToColor(Token token)
     {
         if (token.Type == TokenType.Color)
-        {
-            error = null;
-            return true;
-        }
-        else if (token.Type == TokenType.String)
+            return MakeCheckOkResult();
+        if (token.Type == TokenType.String)
         {
             string content = token.Content[1..^1];
             if (content.Length == 7 && content[0] == '#' && int.TryParse(content[1..7], System.Globalization.NumberStyles.HexNumber, null, out _))
-            {
-                error = null;
-                return true;
-            }
+                return MakeCheckOkResult();
         }
-        error = new TokenCheckError(token, MessageID.ERR_INVALID_COLOR);
-        return false;
+        return MakeCheckErrorResult(token, MessageID.ERR_INVALID_COLOR);
     }
 
-    private bool CheckCanConvertToEnum(Token token, string[] allowedValues, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvertToEnum(Token token, string[] allowedValues)
     {
         string name = token.Content;
         if (token.Type == TokenType.String)
             name = token.Content[1..^1];
-        if ((token.Type != TokenType.Identifier && token.Type != TokenType.String) || !allowedValues.Contains(name))
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_ENUM, string.Join(',', allowedValues));
-            return false;
-        }
-        error = null;
-        return true;
+        if ((token.Type == TokenType.Identifier || token.Type == TokenType.String) && allowedValues.Contains(name))
+			return MakeCheckOkResult();
+        return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_ENUM, string.Join(',', allowedValues));
     }
 	
-	private bool CheckCanConvertToDialog(Token token, out TokenCheckError? error)
+	private Result<object, TokenCheckError> CheckCanConvertToDialog(Token token)
     {
         if (token.Type != TokenType.Dialog)
-        {
-            error = new TokenCheckError(token, MessageID.ERR_NOT_A_DIALOG);
-            return false;
-        }
-        error = null;
-        return true;
-		// @TODO: Обработать правильность строки вывода
+			return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_DIALOG);
+		return MakeCheckOkResult();
+        // @TODO: Обработать правильность строки вывода
+        // Выделять, проверять и сворачивать теги форматирования
+        // Выдавать предупреждение на незакрытые кавычки диалога (во всей реплике)
+        // Выдавать предупреждение на двойной пробел (во всей реплике)
     }
 }
-#nullable restore

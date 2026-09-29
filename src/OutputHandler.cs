@@ -1,7 +1,10 @@
-﻿using System;
+using ONSMake.Lexer;
+using System;
 using System.Text;
+using System.Collections.Generic;
+using ONSMake.Processing;
 
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 public static class OutputHandler
 {
@@ -39,7 +42,7 @@ public static class OutputHandler
         }
     }
 
-    public static void PrintMessage(SourceCodeMessage message)
+    public static void PrintMessage(ScriptMessage message)
     {
 		if (IsSilenced)
             return;
@@ -48,17 +51,17 @@ public static class OutputHandler
         ConsoleColor typeColor;
         switch (message.Type)
         {
-            case SourceCodeMessage.MessageType.Info:
+            case ScriptMessage.MessageType.Info:
                 typeName = "info: ";
                 typeColor = ConsoleColor.Green;
                 Infos++;
                 break;
-            case SourceCodeMessage.MessageType.Warning:
+            case ScriptMessage.MessageType.Warning:
                 typeName = "warning: ";
                 typeColor = ConsoleColor.Yellow;
                 Warnings++;
                 break;
-            case SourceCodeMessage.MessageType.Error:
+            case ScriptMessage.MessageType.Error:
                 typeName = "error: ";
                 typeColor = ConsoleColor.Red;
                 Errors++;
@@ -79,11 +82,56 @@ public static class OutputHandler
 
         lock (_printLock)
         {
-            PrintMessage($"{message.FileName}:{message.Position.Line + 1}:{message.Position.Column + 1}", typeName, typeColor, messageText);
+            PrintMessage($"{message.FileUnit.FileName}:{message.Position.Line + 1}:{message.Position.Column + 1}", typeName, typeColor, messageText);
             Console.WriteLine(PADDING_STRING + trimmed);
             Console.ForegroundColor = typeColor;
             Console.WriteLine(PADDING_STRING + underline);
             Console.ResetColor();
+        }
+    }
+
+    public static void PrintParsingFailure(List<Token> lineTokens, List<Token> treeRootTokens, Exception ex)
+    {
+        Errors++;
+        if (IsSilenced)
+            return;
+
+        lock (_printLock)
+        {
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("Parsing failure.");
+            Console.WriteLine("Line tokens:");
+            Console.ResetColor();
+            foreach (var token in lineTokens)
+                Console.WriteLine(token);
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("Parsed root tokens:");
+            Console.ResetColor();
+            foreach (Token token in treeRootTokens)
+                Console.WriteLine(token.TreeToString());
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("Exception:");
+            Console.ResetColor();
+            Console.WriteLine(ex);
+            Console.WriteLine();
+        }
+    }
+
+    public static void PrintLintingFailure(ScriptUnit fileUnit, ProcessedLine line, Exception ex)
+    {
+        Errors++;
+        if (IsSilenced)
+            return;
+
+        lock (_printLock)
+        {
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("Linting failure.");
+            Console.WriteLine("At {0}:{1}", fileUnit.FileName, line.InputLineIndex + 1);
+            Console.WriteLine("{0}\n=>{1}", line.OutputLine, fileUnit.InputLines[line.InputLineIndex]);
+            Console.ResetColor();
+            Console.WriteLine(ex);
+            Console.WriteLine();
         }
     }
 

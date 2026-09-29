@@ -1,90 +1,78 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake.Lexer;
-using Hitomiso.ONScripterMake.Parser;
+using ONSMake.Lexer;
+using ONSMake.Parser;
 
-namespace Hitomiso.ONScripterMake.Linter;
+namespace ONSMake.Linter;
 
 #nullable enable
 public partial class OnsLinter
 {
-	private bool CheckCommandCallToken(Token commandToken, out TokenCheckError? error)
+	private Result<object, TokenCheckError> CheckCommandCallToken(Token commandToken)
 	{
+		Result<object, TokenCheckError> checkResult;
+		
 		string cmdName = commandToken.Content.ToLower();
 		if (_scriptContext.CustomCommands.ContainsKey(cmdName))
         {
             // @FIXME: Кастомные команды пока пропускаем
-            error = null;
-            return true;
+			return MakeCheckOkResult();
         }
 		
-		if (cmdName.StartsWith("_"))
+		if (cmdName.Length > 0 && cmdName[0] == '_')
 			cmdName = cmdName[1..];
 		if (cmdName == "getparam")
 		{
-            if (!CheckGetParamCommandCall(commandToken, out error))
-                return false;
-			error = null;
-            return true;
+			checkResult = CheckGetParamCommandCall(commandToken);
+            if (checkResult.IsError)
+                return checkResult;
+			return MakeCheckOkResult();
 		}
 		if (!_defaultCommands.ContainsKey(cmdName))
-        {
-            error = new TokenCheckError(commandToken, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
-            return false;
-        }
+			return MakeCheckErrorResult(commandToken, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
 		
 		// Находим и проверяем все перегрузки стандартных команд
 		List<Command> cmdDefinitions = _defaultCommands[cmdName];
 		for (int i = 0; i < cmdDefinitions.Count; i++)
 		{
-            if (CheckCommandParameters(commandToken, cmdDefinitions[i], out error))
-            {
-                error = null; // Всё хорошо. Прекращаем читать дргуие перегрузки команды
-                return true;
-            }
-            else if (i + 1 >= cmdDefinitions.Count)
-            {
-                return false;
-            }
+			checkResult = CheckCommandParameters(commandToken, cmdDefinitions[i]);
+			if (!checkResult.IsError)
+				return MakeCheckOkResult();
+			if (i + 1 >= cmdDefinitions.Count)
+				return checkResult;
 		}
-        error = null;
-        return true;
+		return MakeCheckOkResult();
 	}
 	
-	private bool CheckGetParamCommandCall(Token getParamCommandToken, out TokenCheckError? error)
+	private Result<object, TokenCheckError> CheckGetParamCommandCall(Token getParamCommandToken)
 	{
 		// Читаем переменные, массивы и указатели на переменные
 		foreach (var parameterToken in getParamCommandToken.Children)
 		{
-			if (parameterToken.Type == TokenType.Variable || parameterToken.Type == TokenType.IndexVariable)
+			if (parameterToken.Type != TokenType.Variable && parameterToken.Type != TokenType.IndexVariable)
+				return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
+			switch (parameterToken.Content)
 			{
-				switch (parameterToken.Content)
-				{
-					case "%":
-					case "$":
-					case "?":
-					case "i%":
-						if (!CheckTokenChildren(parameterToken, out error))
-                            return false;
-						break;
-					default:
-						error = new TokenCheckError(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
-                        return false;
-				}
-			}
-			else
-			{
-				error = new TokenCheckError(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
-                return false;
+				case "%":
+				case "$":
+				case "?":
+				case "i%":
+					Result<object, TokenCheckError> checkResult = CheckTokenChildren(parameterToken);
+					if (checkResult.IsError)
+						return checkResult;
+					break;
+				default:
+					return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
 			}
 		}
-        error = null;
-        return true;
+		return MakeCheckOkResult();
 	}
 
-    private bool CheckCommandParameters(Token commandToken, Command definition, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCommandParameters(Token commandToken, Command definition)
     {
+		Result<object, TokenCheckError> checkResult;
+		
 		List<Token> commandParameterTokens = [..commandToken.Children];
         for (int i = 0; i < commandParameterTokens.Count; i++)
         {
@@ -101,11 +89,8 @@ public partial class OnsLinter
                     else
                         potentialCommandToken = receivedParamToken;
                     if (potentialCommandToken.Type != TokenType.Identifier)
-                    {
-                        error = new TokenCheckError(potentialCommandToken, MessageID.ERR_TOO_MANY_PARAMETERS);
-                        return false;
-                    }
-                    throw new PotentialCommandInvocationException(potentialCommandToken);
+						return MakeCheckErrorResult(potentialCommandToken, MessageID.ERR_TOO_MANY_PARAMETERS);
+                    return MakeCheckErrorResult(potentialCommandToken, MessageID.POTENTIAL_COMMAND);
                 }
                 param = definition.Parameters[^1];
 			}
@@ -120,203 +105,162 @@ public partial class OnsLinter
                 Parameter STR_PARAM = new(DataType.Str, "str");
 
                 Token effectNumToken = receivedParamToken;
-                Token? effectDurationToken = commandToken.Children.ElementAtOrDefault(i + 1);
-                Token? effectMaskToken = commandToken.Children.ElementAtOrDefault(i + 2);
+                Token? effectDurationToken = null;
+                Token? effectMaskToken = null;
+                if (i + 1 < commandToken.Children.Count)
+                    effectDurationToken = commandToken.Children[i + 1];
+                if (i + 2 < commandToken.Children.Count)
+                    effectMaskToken = commandToken.Children[i + 2];
                 if (i + 3 < commandToken.Children.Count)
-                {
-                    error = new TokenCheckError(commandToken.Children[i + 3], MessageID.ERR_TOO_MANY_PARAMETERS);
-                    return false;
-                }
-
-                if (!CheckIsParameterAcceptable(effectNumToken, NUM_PARAM, out error))
-                    return false;
+					return MakeCheckErrorResult(commandToken.Children[i + 3], MessageID.ERR_TOO_MANY_PARAMETERS);
+				checkResult = CheckIsParameterAcceptable(effectNumToken, NUM_PARAM);
+                if (checkResult.IsError)
+                    return checkResult;
                 if (effectNumToken.Type == TokenType.Number)
                 {
                     int effectNum = Convert.ToInt32(effectNumToken.Content);
                     if (effectDurationToken != null)
                     {
                         if (effectNum == 1)
-                        {
-                            error = new TokenCheckError(effectDurationToken, MessageID.ERR_TOO_MANY_PARAMETERS);
-                            return false;
-                        }
+							return MakeCheckErrorResult((Token)effectDurationToken, MessageID.ERR_TOO_MANY_PARAMETERS);
                         if ((effectNum < 1 || effectNum > 18) && effectNum != 99)
-                        {
-                            error = new TokenCheckError(effectNumToken, MessageID.ERR_INVALID_BUILT_IN_EFFECT);
-                            return false;
-                        }
+							return MakeCheckErrorResult(effectNumToken, MessageID.ERR_INVALID_BUILT_IN_EFFECT);
                         bool maskRequired = effectNum == 15 || effectNum == 18 || effectNum == 99;
                         if (maskRequired && effectMaskToken == null)
-                        {
-                            error = new TokenCheckError(effectDurationToken, MessageID.ERR_EFFECT_MASK_EXPECTED);
-                            return false;
-                        }
+							return MakeCheckErrorResult((Token)effectDurationToken, MessageID.ERR_EFFECT_MASK_EXPECTED);
                         if (!maskRequired && effectMaskToken != null)
-                        {
-                            error = new TokenCheckError(effectMaskToken, MessageID.ERR_UNEXPECTED_EFFECT_MASK);
-                            return false;
-                        }
+							return MakeCheckErrorResult((Token)effectMaskToken, MessageID.ERR_UNEXPECTED_EFFECT_MASK);
                     }
                 }
                 if (effectDurationToken != null)
                 {
-                    if ((effectDurationToken).Type == TokenType.Number && Convert.ToInt32((effectDurationToken).Content) < 1)
-                    {
-                        error = new TokenCheckError(effectDurationToken, MessageID.ERR_INVALID_EFFECT_DURATION);
-                        return false;
-                    }
-                    if (!CheckIsParameterAcceptable(effectDurationToken, NUM_PARAM, out error))
-                        return false;
+                    if (((Token)effectDurationToken).Type == TokenType.Number && Convert.ToInt32(((Token)effectDurationToken).Content) < 1)
+						return MakeCheckErrorResult((Token)effectDurationToken, MessageID.ERR_INVALID_EFFECT_DURATION);
+					checkResult = CheckIsParameterAcceptable((Token)effectDurationToken, NUM_PARAM);
+                    if (checkResult.IsError)
+                        return checkResult;
                 }
                 if (effectMaskToken != null)
                 {
-                    if (!CheckIsParameterAcceptable(effectMaskToken, STR_PARAM, out error))
-                        return false;
+					checkResult = CheckIsParameterAcceptable((Token)effectMaskToken, STR_PARAM);
+                    if (checkResult.IsError)
+                        return checkResult;
                 }
-                error = null;
-                return true;
+				return MakeCheckOkResult();
             }
             else
             {
-                if (!CheckIsParameterAcceptable(receivedParamToken, param, out error))
-                    return false;
+				checkResult = CheckIsParameterAcceptable(receivedParamToken, param);
+                if (checkResult.IsError)
+                    return checkResult;
             }
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 
-    private bool CheckIsParameterAcceptable(Token token, Parameter definition, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckIsParameterAcceptable(Token token, Parameter definition)
     {
+		Result<object, TokenCheckError> checkResult;
+		
         if (ARITHMETIC_OPERATORS.Contains(token.Type))
         {
             if (definition.Type != DataType.Num && definition.Type != DataType.Str)
-            {
-                error = new TokenCheckError(token, MessageID.ERR_EXPRESSIONS_NOT_ALLOWED);
-                return false;
-            }
+				return MakeCheckErrorResult(token, MessageID.ERR_EXPRESSIONS_NOT_ALLOWED);
             bool isNumericExpression = definition.Type == DataType.Num;
-            if (!CheckArithmeticExpression(token, isNumericExpression, out error))
-                return false;
-            error = null;
-            return true;
+			checkResult = CheckArithmeticExpression(token, isNumericExpression);
+            if (checkResult.IsError)
+                return checkResult;
+			return MakeCheckOkResult();
         }
         if (COMPARISON_OPERATORS.Contains(token.Type) || LOGICAL_OPERATORS.Contains(token.Type))
         {
             if (definition.Type != DataType.Condition)
-            {
-                error = new TokenCheckError(token, MessageID.ERR_CONDITIONS_NOT_ALLOWED);
-                return false;
-            }
-            if (!CheckLogicExpression(token, out error))
-                return false;
-            error = null;
-            return true;
+				return MakeCheckErrorResult(token, MessageID.ERR_CONDITIONS_NOT_ALLOWED);
+			checkResult = CheckLogicExpression(token);
+            if (checkResult.IsError)
+                return checkResult;
+			return MakeCheckOkResult();
         }
         if (definition.Type == DataType.Enum)
         {
             if (definition.EnumValues == null)
                 throw new NullReferenceException();
-            if (!CheckCanConvertToEnum(token, definition.EnumValues, out error))
-                return false;
+			checkResult = CheckCanConvertToEnum(token, definition.EnumValues);
+            if (checkResult.IsError)
+                return checkResult;
         }
         else
         {
-            if (!CheckCanConvert(token, definition.Type, out error))
-                return false;
+			checkResult = CheckCanConvert(token, definition.Type);
+            if (checkResult.IsError)
+                return checkResult;
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 
-    private bool CheckArithmeticExpression(Token operatorToken, bool isNumeric, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckArithmeticExpression(Token operatorToken, bool isNumeric)
     {
         if (operatorToken.Children.Count == 0)
-        {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_MISSING_FIRST_OPERAND);
-            return false;
-        }
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_MISSING_FIRST_OPERAND);
         if (operatorToken.Children.Count == 1)
-        {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_MISSING_SECOND_OPERAND);
-            return false;
-        }
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_MISSING_SECOND_OPERAND);
 
         var opA = operatorToken.Children[0];
         var opB = operatorToken.Children[1];
         // Строковые операнды принимает только оператор +
         if (!isNumeric && operatorToken.Type != TokenType.Add)
-        {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-            return false;
-        }
-        if (!CheckExpressionOperand(opA, isNumeric, out error))
-            return false;
-        if (!CheckExpressionOperand(opB, isNumeric, out error))
-            return false;
-        error = null;
-        return true;
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
+		Result<object, TokenCheckError> checkResult = CheckExpressionOperand(opA, isNumeric);
+        if (checkResult.IsError)
+            return checkResult;
+		checkResult = CheckExpressionOperand(opB, isNumeric);
+        if (checkResult.IsError)
+            return checkResult;
+		return MakeCheckOkResult();
     }
 
-    private bool CheckExpressionOperand(Token operandToken, bool isNumeric, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckExpressionOperand(Token operandToken, bool isNumeric)
     {
         if (ARITHMETIC_OPERATORS.Contains(operandToken.Type))
-            return CheckArithmeticExpression(operandToken, isNumeric, out error);
-        if (!CheckTokenChildren(operandToken, out error))
-            return false;
+            return CheckArithmeticExpression(operandToken, isNumeric);
+		Result<object, TokenCheckError> checkResult = CheckTokenChildren(operandToken);
+        if (checkResult.IsError)
+            return checkResult;
         if (operandToken.Type == TokenType.Identifier)
         {
             if (isNumeric)
             {
-                if (!_scriptContext.NumaliasDefinitions.ContainsKey(operandToken.Content))
-                {
-                    error = new TokenCheckError(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
-                    return false;
-                }
+                if (!_scriptContext.Numaliases.ContainsKey(operandToken.Content.ToLower()))
+					return MakeCheckErrorResult(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
             }
             else
             {
-                if (!_scriptContext.StraliasDefinitions.ContainsKey(operandToken.Content))
-                {
-                    error = new TokenCheckError(operandToken, MessageID.ERR_STRALIAS_NOT_DEFINED, operandToken.Content);
-                    return false;
-                }
+                if (!_scriptContext.Straliases.ContainsKey(operandToken.Content.ToLower()))
+					return MakeCheckErrorResult(operandToken, MessageID.ERR_STRALIAS_NOT_DEFINED, operandToken.Content);
             }
-            error = null;
-            return true;
+			return MakeCheckOkResult();
         }
         if (isNumeric)
         {
             if (!IsTokenNumeric(operandToken))
-            {
-                error = new TokenCheckError(operandToken, MessageID.ERR_NOT_A_NUMBER);
-                return false;
-            }
+				return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_NUMBER);
         }
         else
         {
             if (!IsTokenString(operandToken))
-            {
-                error = new TokenCheckError(operandToken, MessageID.ERR_NOT_A_STRING);
-                return false;
-            }
+				return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_STRING);
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 
-    private bool CheckLogicExpression(Token operatorToken, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckLogicExpression(Token operatorToken)
     {
+		Result<object, TokenCheckError> checkResult;
+		
         if (operatorToken.Children.Count == 0)
-        {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_MISSING_FIRST_OPERAND);
-            return false;
-        }   
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_MISSING_FIRST_OPERAND);   
         if (operatorToken.Children.Count == 1)
-        {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_MISSING_SECOND_OPERAND);
-            return false;
-        }
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_MISSING_SECOND_OPERAND);
 
         var opA = operatorToken.Children[0];
         var opB = operatorToken.Children[1];
@@ -325,217 +269,159 @@ public partial class OnsLinter
         if (isLogical)
         {
             if (!COMPARISON_OPERATORS.Contains(opA.Type) && !LOGICAL_OPERATORS.Contains(opA.Type))
-            {
-                error = new TokenCheckError(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-                return false;
-            }
+				return MakeCheckErrorResult(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
             if (!COMPARISON_OPERATORS.Contains(opB.Type) && !LOGICAL_OPERATORS.Contains(opB.Type))
-            {
-                error = new TokenCheckError(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-                return false;
-            }
-            if (!CheckLogicExpression(opA, out error))
-                return false;
-            if (!CheckLogicExpression(opB, out error))
-                return false;
+				return MakeCheckErrorResult(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
+			checkResult = CheckLogicExpression(opA);
+            if (checkResult.IsError)
+                return checkResult;
+			checkResult = CheckLogicExpression(opB);
+            if (checkResult.IsError)
+				return checkResult;
         }
         else if (isComparison)
         {
             if (COMPARISON_OPERATORS.Contains(opA.Type) || LOGICAL_OPERATORS.Contains(opA.Type))
-            {
-                error = new TokenCheckError(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-                return false;
-            }
+				return MakeCheckErrorResult(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
 			if (COMPARISON_OPERATORS.Contains(opB.Type) || LOGICAL_OPERATORS.Contains(opB.Type))
-            {
-                error = new TokenCheckError(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-                return false;
-            }
+				return MakeCheckErrorResult(operatorToken, MessageID.ERR_INVALID_OPERAND_TYPE);
             
-            if (!GuessIsOperandNumeric(opA, out bool isOpANumeric, out error))
-                return false;
-            if (!GuessIsOperandNumeric(opB, out bool isOpBNumeric, out error))
-                return false;
-            if (isOpANumeric != isOpBNumeric)
-            {
-                error = new TokenCheckError(operatorToken, MessageID.ERR_COMPARE_OPERAND_TYPE_MISMATCH);
-                return false;
-            }
-            if (!CheckExpressionOperand(opA, isOpANumeric, out error))
-                return false;
-            if (!CheckExpressionOperand(opB, isOpBNumeric, out error))
-                return false;
+			Result<bool, TokenCheckError> opAIsNumericResult = GuessIsOperandNumeric(opA);
+			Result<bool, TokenCheckError> opBIsNumericResult = GuessIsOperandNumeric(opB);
+            if (opAIsNumericResult.IsError)
+                return Result<object, TokenCheckError>.Fail(opAIsNumericResult.Error);
+            if (opBIsNumericResult.IsError)
+                return Result<object, TokenCheckError>.Fail(opBIsNumericResult.Error);
+            if (opAIsNumericResult.Value != opBIsNumericResult.Value)
+				return MakeCheckErrorResult(operatorToken, MessageID.ERR_COMPARE_OPERAND_TYPE_MISMATCH);
+			
+			checkResult = CheckExpressionOperand(opA, opAIsNumericResult.Value);
+			if (checkResult.IsError)
+				return checkResult;
+			checkResult = CheckExpressionOperand(opB, opBIsNumericResult.Value);
+			if (checkResult.IsError)
+				return checkResult;
         }
         else
         {
-            error = new TokenCheckError(operatorToken, MessageID.ERR_UNKNOWN_CONDITION_OPERATOR_TYPE);
-            return false;
+			return MakeCheckErrorResult(operatorToken, MessageID.ERR_UNKNOWN_CONDITION_OPERATOR_TYPE);
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 
-    private bool GuessIsOperandNumeric(Token operandToken, out bool isNumeric, out TokenCheckError? error)
+    private Result<bool, TokenCheckError> GuessIsOperandNumeric(Token operandToken)
     {
         if (operandToken.Type == TokenType.Identifier)
         {
-            if (_scriptContext.NumaliasDefinitions.ContainsKey(operandToken.Content))
-            {
-                isNumeric = true;
-                error = null;
-                return true;
-            }    
-            if (_scriptContext.StraliasDefinitions.ContainsKey(operandToken.Content))
-            {
-                isNumeric = false;
-                error = null;
-                return true;
-            }
-            isNumeric = false;
-            error = new TokenCheckError(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
-            return false;
+            if (_scriptContext.Numaliases.ContainsKey(operandToken.Content.ToLower()))
+				return MakeIsNumericOkResult(true);
+            if (_scriptContext.Straliases.ContainsKey(operandToken.Content.ToLower()))
+				return MakeIsNumericOkResult(false);
+			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
         }
-        isNumeric = false;
-        if (ARITHMETIC_OPERATORS.Contains(operandToken.Type))
-		{
-			if (operandToken.Children.Count == 0)
-            {
-                error = new TokenCheckError(operandToken, MessageID.ERR_MISSING_FIRST_OPERAND);
-                return false;
-            }
-			if (operandToken.Children.Count == 1)
-            {
-                error = new TokenCheckError(operandToken, MessageID.ERR_MISSING_SECOND_OPERAND);
-                return false;
-            }   
-			var opA = operandToken.Children[0];
-			var opB = operandToken.Children[1];
-            if (!GuessIsOperandNumeric(opA, out bool isOpANumeric, out error))
-                return false;
-            if (!GuessIsOperandNumeric(opB, out bool isOpBNumeric, out error))
-                return false;
-			if (isOpANumeric != isOpBNumeric)
-            {
-                error = new TokenCheckError(operandToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-                return false;
-            }
-            isNumeric = isOpANumeric;
-            error = null;
-            return true;
-		}
-        isNumeric = IsTokenNumeric(operandToken);
-        error = null;
-        return true;
+        if (!ARITHMETIC_OPERATORS.Contains(operandToken.Type))
+			return MakeIsNumericOkResult(IsTokenNumeric(operandToken));
+
+		if (operandToken.Children.Count == 0)
+			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_MISSING_FIRST_OPERAND);
+		if (operandToken.Children.Count == 1)
+			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_MISSING_SECOND_OPERAND);
+		var opA = operandToken.Children[0];
+		var opB = operandToken.Children[1];
+		var opACheckResult = GuessIsOperandNumeric(opA);
+		var opBCheckResult = GuessIsOperandNumeric(opB);
+		if (opACheckResult.IsError)
+			return opACheckResult;
+		if (opBCheckResult.IsError)
+			return opBCheckResult;
+		if (opACheckResult.Value != opBCheckResult.Value)
+			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_INVALID_OPERAND_TYPE);
+		return opACheckResult;
     }
 
 
 
-    private bool CheckTokenChildren(Token token, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckTokenChildren(Token token)
     {
-        if (!_tokenChildrenHandlers.ContainsKey(token.Type))
-        {
-            error = new TokenCheckError(token, MessageID.ERR_U_STUPIT);
-            return false;
-        }
-        return _tokenChildrenHandlers[token.Type](token, out error);
+        if (!_tokenChildrenHandlers.TryGetValue(token.Type, out CheckerDelegate? value))
+			return MakeCheckErrorResult(token, MessageID.ERR_U_STUPIT);
+        return value(token);
     }
 
-    private bool CheckCanConvert(Token token, DataType targetType, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckCanConvert(Token token, DataType targetType)
     {
-        if (!_canConvertHandlers.ContainsKey(targetType))
-        {
-            error = new TokenCheckError(token, MessageID.ERR_U_STUPIT);
-            return false;
-        }
-        return _canConvertHandlers[targetType](token, out error);
+        if (!_canConvertHandlers.TryGetValue(targetType, out CheckerDelegate? value))
+			return MakeCheckErrorResult(token, MessageID.ERR_U_STUPIT);
+        return value(token);
     }
 
-    private bool CheckNoChildren(Token parent, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckNoChildren(Token parent)
     {
         if (parent.Children.Count > 0)
-        {
-            error = new TokenCheckError(parent.Children[0], MessageID.ERR_TOO_MANY_TOKEN_CHILDREN);
-            return false;
-        }
-        error = null;
-        return true;
+			return MakeCheckErrorResult(parent.Children[0], MessageID.ERR_TOO_MANY_TOKEN_CHILDREN);
+		return MakeCheckOkResult();
     }
 
-    private bool CheckVariableOrArrayChildren(Token parent, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckVariableOrArrayChildren(Token parent)
     {
         if (parent.Type != TokenType.Variable)
             throw new ArgumentException("Variable or array parent expected.");
         if (parent.Content == "?")
-            return CheckArrayChildren(parent, out error);
+            return CheckArrayChildren(parent);
         else
-            return CheckVariableChildren(parent, out error);
+            return CheckVariableChildren(parent);
     }
 
-    private bool CheckVariableChildren(Token parent, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckVariableChildren(Token parent)
     {
         if (parent.Children.Count != 1)
-        {
-            error = new TokenCheckError(parent, MessageID.ERR_VAR_WITHOUT_NUM);
-            return false;
-        }
+			return MakeCheckErrorResult(parent, MessageID.ERR_VAR_WITHOUT_NUM);
 
         var varNumberToken = parent.Children[0];
         if (!IsTokenNumeric(varNumberToken))
-        {
-            error = new TokenCheckError(varNumberToken, MessageID.ERR_NOT_A_NUMBER);
-            return false;
-        }
+			return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NOT_A_NUMBER);
         if (varNumberToken.Type == TokenType.Identifier)
         {
-            if (!_scriptContext.NumaliasDefinitions.ContainsKey(varNumberToken.Content))
-            {
-                error = new TokenCheckError(varNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, varNumberToken.Content);
-                return false;
-            }
+            if (!_scriptContext.Numaliases.ContainsKey(varNumberToken.Content.ToLower()))
+				return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, varNumberToken.Content);
         }
         else if (varNumberToken.Type == TokenType.Variable)
         {
             if (varNumberToken.Content == "%")
-                return CheckVariableChildren(varNumberToken, out error);
+                return CheckVariableChildren(varNumberToken);
             else if (varNumberToken.Content == "?")
-                return CheckArrayChildren(varNumberToken, out error);
+                return CheckArrayChildren(varNumberToken);
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 
-    private bool CheckArrayChildren(Token parent, out TokenCheckError? error)
+    private Result<object, TokenCheckError> CheckArrayChildren(Token parent)
     {
+		Result<object, TokenCheckError> checkResult;
+		
         if (parent.Children.Count < 2)
-        {
-            error = new TokenCheckError(parent, MessageID.ERR_ARRAY_WITHOUT_INDEX);
-            return false;
-        }
+			return MakeCheckErrorResult(parent, MessageID.ERR_ARRAY_WITHOUT_INDEX);
         var arrayNumberToken = parent.Children[0];
         if (!IsTokenNumeric(arrayNumberToken))
-        {
-            error = new TokenCheckError(arrayNumberToken, MessageID.ERR_NOT_A_NUMBER);
-            return false;
-        }
+			return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NOT_A_NUMBER);
         if (arrayNumberToken.Type == TokenType.Identifier)
         {
-            if (!_scriptContext.NumaliasDefinitions.ContainsKey(arrayNumberToken.Content.ToLower()))
-            {
-                error = new TokenCheckError(arrayNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, arrayNumberToken.Content);
-                return false;
-            }
+            if (!_scriptContext.Numaliases.ContainsKey(arrayNumberToken.Content.ToLower()))
+				return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, arrayNumberToken.Content);
         }
         else if (arrayNumberToken.Type == TokenType.Variable)
         {
             if (arrayNumberToken.Content == "%")
             {
-                if (!CheckVariableChildren(arrayNumberToken, out error))
-                    return false;
+				checkResult = CheckVariableChildren(arrayNumberToken);
+                if (checkResult.IsError)
+                    return checkResult;
             }
             else if (arrayNumberToken.Content == "?")
             {
-                if (!CheckArrayChildren(arrayNumberToken, out error))
-                    return false;
+				checkResult = CheckArrayChildren(arrayNumberToken);
+                if (checkResult.IsError)
+                    return checkResult;
             }
         }
 
@@ -544,20 +430,18 @@ public partial class OnsLinter
             var child = parent.Children[i];
             // Эти дети уже могут быть числовыми выражениями
             if (ARITHMETIC_OPERATORS.Contains(child.Type))
-                return CheckArithmeticExpression(child, isNumeric: true, out error);
+                return CheckArithmeticExpression(child, isNumeric: true);
 			if (COMPARISON_OPERATORS.Contains(child.Type) || LOGICAL_OPERATORS.Contains(child.Type))
-            {
-                error = new TokenCheckError(child, MessageID.ERR_CONDITIONS_NOT_ALLOWED);
-                return false;
-            }
+				return MakeCheckErrorResult(child, MessageID.ERR_CONDITIONS_NOT_ALLOWED);
 
-            if (!CheckTokenChildren(child, out error))
-                return false;
-            if (!CheckCanConvert(child, DataType.Num, out error))
-                return false;
+			checkResult = CheckTokenChildren(child);
+            if (checkResult.IsError)
+                return checkResult;
+			checkResult = CheckCanConvert(child, DataType.Num);
+            if (checkResult.IsError)
+                return checkResult;
         }
-        error = null;
-        return true;
+		return MakeCheckOkResult();
     }
 }
 #nullable restore

@@ -1,12 +1,11 @@
-﻿using Hitomiso.ONScripterMake.Parser;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Hitomiso.ONScripterMake.Lexer;
+namespace ONSMake.Lexer;
 
-public class Token
+public readonly record struct Token
 {
     public readonly TokenType Type;
     public readonly string Content;
@@ -22,15 +21,12 @@ public class Token
         StartColumn = startColumn;
     }
     
-	public override string ToString()
-	{
-		return $"{Type}({Content})";
-	}
+	public override string ToString() => $"{Type}({Content})";
 
     public string TreeToString()
     {
         StringBuilder sb = new();
-        sb.AppendLine($"{Type}({Content})");
+        sb.AppendLine(ToString());
 
         for (int i = 0; i < Children.Count; i++)
         {

@@ -1,16 +1,16 @@
-﻿using System;
-using Hitomiso.ONScripterMake;
-using Hitomiso.ONScripterMake.Lexer;
+using System;
+using ONSMake;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Linter;
+namespace ONSMake.Linter;
 
 #nullable enable
-public class TokenCheckError
+public readonly record struct TokenCheckError
 {
-    public Token? Token { get; set; }
-    public MessageID? MessageID { get; private set; }
-    public string[] Args { get; private set; }
-    public string MessageText { get; private set; }
+    public readonly Token? Token;
+    public readonly MessageID? MessageID;
+    public readonly string[] Args;
+    public readonly string MessageText;
 
     public TokenCheckError(Token? token, MessageID messageId, params string[] args)
     {

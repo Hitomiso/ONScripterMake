@@ -1,55 +1,70 @@
 using System;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake.Lexer;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Parser;
+namespace ONSMake.Parser;
 
 #nullable enable
 public abstract class ParserStateHandler
 {
     /// <summary>
-    /// Готовность состояния к получению и обработке токенов.
-    /// Когда false, перед обработкой токенов надо обновить внутренние поля состояния и установить IsReady в true.
+    /// Р“РѕС‚РѕРІРЅРѕСЃС‚СЊ СЃРѕСЃС‚РѕСЏРЅРёСЏ Рє РїРѕР»СѓС‡РµРЅРёСЋ Рё РѕР±СЂР°Р±РѕС‚РєРµ С‚РѕРєРµРЅРѕРІ.
+    /// РљРѕРіРґР° false, РїРµСЂРµРґ РѕР±СЂР°Р±РѕС‚РєРѕР№ С‚РѕРєРµРЅРѕРІ РЅР°РґРѕ РѕР±РЅРѕРІРёС‚СЊ РІРЅСѓС‚СЂРµРЅРЅРёРµ РїРѕР»СЏ СЃРѕСЃС‚РѕСЏРЅРёСЏ Рё СѓСЃС‚Р°РЅРѕРІРёС‚СЊ IsReady РІ true.
     /// </summary>
     public bool IsReady { get; protected set; } = false;
-    protected OnsParser _parser;
-    protected Dictionary<TokenType, Action<Token>> _tokenHandlers = new();
-
-    public ParserStateHandler(OnsParser parser)
+    public ParserContext Context
     {
-        _parser = parser;
+        get => _context;
+        set {
+            if (value == null)
+                throw new NullReferenceException("Can not set Context property to null.");
+            _context = value;
+        }
+    }
+    
+    protected delegate void _tokenHandlerDelegate(Token token, out bool success);
+    protected Dictionary<TokenType, _tokenHandlerDelegate> _tokenHandlers = [];
+    protected ParserContext _context;
+    
+    public ParserStateHandler(ParserContext context)
+    {
+        _context = context;
     }
 
-    // @TODO: Превратить в bool TryHandleToken
-    public virtual void HandleToken(Token token)
+    public virtual void TryHandleToken(Token token, out bool success)
     {
         if (!IsReady)
             throw new ApplicationException("State is not marked as ready.");
-        if (!_tokenHandlers.ContainsKey(token.Type))
-            throw new UnexpectedTokenException(token);
-        _tokenHandlers[token.Type](token);
+        if (_tokenHandlers.TryGetValue(token.Type, out _tokenHandlerDelegate? handler))
+            handler(token, out success);
+        else
+            success = false;
     }
 
     /// <summary>
-    /// Запрещает использование состояния с устаревшими внутренними данными.
-    /// В переопределениях установите IsReady в false.
-    /// Кроме Invalidate сделайте метод для установки внутренних полей и IsReady в true, вместо передачи их значений через конструктор. Рекомендуется имя Recycle.
+    /// Р—Р°РїСЂРµС‰Р°РµС‚ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ СЃРѕСЃС‚РѕСЏРЅРёСЏ СЃ СѓСЃС‚Р°СЂРµРІС€РёРјРё РІРЅСѓС‚СЂРµРЅРЅРёРјРё РґР°РЅРЅС‹РјРё.
+    /// Р’ РїРµСЂРµРѕРїСЂРµРґРµР»РµРЅРёСЏС… СѓСЃС‚Р°РЅРѕРІРёС‚СЊ IsReady РІ false.
+    /// РљСЂРѕРјРµ Invalidate СЃРґРµР»Р°Р№С‚Рµ РјРµС‚РѕРґ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё РІРЅСѓС‚СЂРµРЅРЅРёС… РїРѕР»РµР№ Рё IsReady РІ true, РІРјРµСЃС‚Рѕ РїРµСЂРµРґР°С‡Рё РёС… Р·РЅР°С‡РµРЅРёР№ С‡РµСЂРµР· РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ.
+    /// Р РµРєРѕРјРµРЅРґСѓРµС‚СЃСЏ РёРјСЏ Recycle.
     /// </summary>
-    public virtual void Invalidate() { IsReady = false; }
+    public virtual void Invalidate()
+    {
+        IsReady = false;
+    }
 
     /// <summary>
-    /// Вызывается, когда состояние выше по стеку завершилось и вернуло обработанное значение.
+    /// Р’С‹Р·С‹РІР°РµС‚СЃСЏ, РєРѕРіРґР° СЃРѕСЃС‚РѕСЏРЅРёРµ РІС‹С€Рµ РїРѕ СЃС‚РµРєСѓ Р·Р°РІРµСЂС€РёР»РѕСЃСЊ Рё РІРµСЂРЅСѓР»Рѕ РѕР±СЂР°Р±РѕС‚Р°РЅРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ.
     /// </summary>
-    /// <param name="returnValue">Возвращённое состоянием выше значение.</param>
+    /// <param name="returnValue">Р’РѕР·РІСЂР°С‰С‘РЅРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµРј РІС‹С€Рµ Р·РЅР°С‡РµРЅРёРµ.</param>
     public abstract void OnReturn(Token? returnValue);
 
     /// <summary>
-    /// Вызывается каскадно по всем состояниям в стеке, когда нужно очистить стек и установить новое начальное состояние.
-    /// В этом методе нужно финализировать обрабатываемый токен, если он есть, и вернуть его.
-    /// Никогда не пытайтесь заново сбросить стек состояний из этого метода.
+    /// Р’С‹Р·С‹РІР°РµС‚СЃСЏ РєР°СЃРєР°РґРЅРѕ РїРѕ РІСЃРµРј СЃРѕСЃС‚РѕСЏРЅРёСЏРј РІ СЃС‚РµРєРµ, РєРѕРіРґР° РЅСѓР¶РЅРѕ РѕС‡РёСЃС‚РёС‚СЊ СЃС‚РµРє Рё СѓСЃС‚Р°РЅРѕРІРёС‚СЊ РЅРѕРІРѕРµ РЅР°С‡Р°Р»СЊРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ.
+    /// Р’ СЌС‚РѕРј РјРµС‚РѕРґРµ РЅСѓР¶РЅРѕ С„РёРЅР°Р»РёР·РёСЂРѕРІР°С‚СЊ РѕР±СЂР°Р±Р°С‚С‹РІР°РµРјС‹Р№ С‚РѕРєРµРЅ, РµСЃР»Рё РѕРЅ РµСЃС‚СЊ, Рё РІРµСЂРЅСѓС‚СЊ РµРіРѕ.
+    /// РќРёРєРѕРіРґР° РЅРµ РїС‹С‚Р°Р№С‚РµСЃСЊ Р·Р°РЅРѕРІРѕ СЃР±СЂРѕСЃРёС‚СЊ СЃС‚РµРє СЃРѕСЃС‚РѕСЏРЅРёР№ РёР· СЌС‚РѕРіРѕ РјРµС‚РѕРґР°.
     /// </summary>
-    /// <param name="returnValue">Возвращённое состоянием выше значение.</param>
-    /// <returns>Финализированный токен для состояния ниже по стеку.</returns>
+    /// <param name="returnValue">Р’РѕР·РІСЂР°С‰С‘РЅРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµРј РІС‹С€Рµ Р·РЅР°С‡РµРЅРёРµ.</param>
+    /// <returns>Р¤РёРЅР°Р»РёР·РёСЂРѕРІР°РЅРЅС‹Р№ С‚РѕРєРµРЅ РґР»СЏ СЃРѕСЃС‚РѕСЏРЅРёСЏ РЅРёР¶Рµ РїРѕ СЃС‚РµРєСѓ.</returns>
     public abstract Token? OnReset(Token? returnValue);
 }
 #nullable restore

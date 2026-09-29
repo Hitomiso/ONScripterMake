@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake.Lexer;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Parser;
+namespace ONSMake.Parser;
 
 #nullable enable
 public class CommandState : ParserStateHandler
@@ -19,10 +19,10 @@ public class CommandState : ParserStateHandler
     private Token? _commandToken;
     private ForLoopParameter _forLoopParameter;
 
-    public CommandState(OnsParser parser) : base(parser)
+    public CommandState(ParserContext context) : base(context)
     {
-        _tokenHandlers.Add(TokenType.Identifier, SetCommand);
-        _tokenHandlers.Add(TokenType.Comment, HandleComment);
+        _tokenHandlers.Add(TokenType.Identifier, TrySetCommand);
+        _tokenHandlers.Add(TokenType.Comment, TryHandleComment);
         Recycle();
     }
 
@@ -44,7 +44,7 @@ public class CommandState : ParserStateHandler
             {
                 case "notif":
                 case "if":
-                    var commandHandler = (CommandState)_parser.ResetToNewState(OnsParserStateType.Command);
+                    var commandHandler = (CommandState)_context.ResetToNewState(OnsParserStateType.Command);
                     commandHandler.Recycle();
                     return;
                 case "for":
@@ -66,20 +66,25 @@ public class CommandState : ParserStateHandler
         return _commandToken;
     }
 
-    public void SetCommand(Token token)
+    public void TrySetCommand(Token token, out bool success)
     {
         if (token.Type != TokenType.Identifier)
-            throw new UnexpectedTokenException(token);
+        {
+            success = false;
+            return;
+        }
         if (_commandToken != null)
             throw new ApplicationException($"Command token is already set ({_commandToken}), trying to push {token}.");
         _commandToken = token;
         SetParameterState();
+        success = true;
     }
 
-    public void HandleComment(Token token)
+    public void TryHandleComment(Token token, out bool success)
     {
-        _parser.ResetToNewState(OnsParserStateType.Command);
-        _parser.RootTokens.Add(token);
+        _context.ResetToNewState(OnsParserStateType.Command);
+        _context.RootTokens.Add(token);
+        success = true;
     }
 
     private void SetParameterState()
@@ -90,17 +95,17 @@ public class CommandState : ParserStateHandler
         {
             case "notif":
             case "if":
-                ((IfParametersState)_parser.PushState(OnsParserStateType.IfParameter)).Recycle();
+                ((IfParametersState)_context.PushState(OnsParserStateType.IfParameter)).Recycle();
                 break;
             case "for":
                 PushForParameterState();
                 break;
             case "d":
             case "d2":
-                ((DialogParameterState)_parser.PushState(OnsParserStateType.DialogParameter)).Recycle();
+                ((DialogParameterState)_context.PushState(OnsParserStateType.DialogParameter)).Recycle();
                 break;
             default:
-                ((NormalParametersState)_parser.PushState(OnsParserStateType.NormalParameter)).Recycle();
+                ((NormalParametersState)_context.PushState(OnsParserStateType.NormalParameter)).Recycle();
                 break;
         }
     }
@@ -110,16 +115,16 @@ public class CommandState : ParserStateHandler
         switch (_forLoopParameter)
         {
             case ForLoopParameter.Counter:
-                ((ForCounterState)_parser.PushState(OnsParserStateType.ForCounter)).Recycle();
+                ((ForCounterState)_context.PushState(OnsParserStateType.ForCounter)).Recycle();
                 break;
             case ForLoopParameter.FromValue:
-                ((ForFromState)_parser.PushState(OnsParserStateType.ForFrom)).Recycle();
+                ((ForFromState)_context.PushState(OnsParserStateType.ForFrom)).Recycle();
                 break;
             case ForLoopParameter.ToValue:
-                ((ForToState)_parser.PushState(OnsParserStateType.ForTo)).Recycle();
+                ((ForToState)_context.PushState(OnsParserStateType.ForTo)).Recycle();
                 break;
             case ForLoopParameter.StepValue:
-                ((ForStepState)_parser.PushState(OnsParserStateType.ForStep)).Recycle();
+                ((ForStepState)_context.PushState(OnsParserStateType.ForStep)).Recycle();
                 break;
             default:
                 throw new ApplicationException($"Handler for loop parameter '{_forLoopParameter}' is unknown.");

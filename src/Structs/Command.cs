@@ -2,7 +2,7 @@
 using System.Linq;
 using System.Collections.Generic;
 
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 #nullable enable
 public class Command

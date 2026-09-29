@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Linq;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake.Lexer;
+using ONSMake.Lexer;
 
-namespace Hitomiso.ONScripterMake.Parser;
+namespace ONSMake.Parser;
 
 public class IfParametersState : NormalParametersState
 {
-    public IfParametersState(OnsParser parser) : base(parser)
+    public IfParametersState(ParserContext context) : base(context)
     {
         _tokenHandlers.Remove(TokenType.Comma);
         Recycle();

@@ -1,21 +1,19 @@
 using System;
 using System.Collections.Generic;
-using Hitomiso.ONScripterMake;
-using Hitomiso.ONScripterMake.Lexer;
-using Hitomiso.ONScripterMake.Parser;
-using Hitomiso.ONScripterMake.Processing;
+using ONSMake;
+using ONSMake.Lexer;
+using ONSMake.Parser;
+using ONSMake.Processing;
 
-namespace Hitomiso.ONScripterMake.Linter;
+namespace ONSMake.Linter;
 
-#nullable enable
 public partial class OnsLinter
 {
-    private delegate bool CheckerDelegate(Token token, out TokenCheckError? error);
+    private delegate Result<object, TokenCheckError> CheckerDelegate(Token token);
 
     private Dictionary<TokenType, CheckerDelegate> _tokenChildrenHandlers = [];
     private Dictionary<DataType, CheckerDelegate> _canConvertHandlers = [];
     private Dictionary<string, List<Command>> _defaultCommands = [];
-    private readonly OnsParser _parser = new();
     private readonly FinalScriptContext _scriptContext;
 
     private readonly TokenType[] ARITHMETIC_OPERATORS =
@@ -46,20 +44,10 @@ public partial class OnsLinter
         Num,
         Str
     }
-     
-    private class PotentialCommandInvocationException : Exception
-    {
-        public readonly Token PotentialCommandToken;
-
-        public PotentialCommandInvocationException(Token potentialCommandToken)
-        {
-            PotentialCommandToken = potentialCommandToken;
-        }
-    }
-
+    
     public OnsLinter(Dictionary<string, List<Command>> defaultCommands, FinalScriptContext scriptContext)
     {
-        _defaultCommands = new Dictionary<string, List<Command>>(defaultCommands);
+        _defaultCommands = defaultCommands;
         _scriptContext = scriptContext;
 
         _tokenChildrenHandlers.Add(TokenType.Identifier, CheckNoChildren);
@@ -80,70 +68,71 @@ public partial class OnsLinter
         _canConvertHandlers.Add(DataType.Dialog, CheckCanConvertToDialog);
     }
 
-    public SourceCodeMessage[] LintFile(SourceFileProcessor file) // Должен быть потокобезопасным
+    public void LintUnit(ScriptUnit fileUnit)
     {
-        List<SourceCodeMessage> messages = [];
-
-        // Выполняем для каждой команды в каждой строке
-        foreach (ProcessedLine line in file.OutputLines)
+        foreach (ProcessedLine line in fileUnit.OutputLines)
         {
-            List<Token> rootTokens = line.Tokens;
-        lintingRootTokens:
             try
             {
-                foreach (Token token in rootTokens)
-                {
-                    if (token.Type != TokenType.Identifier)
-                        continue;
-                    if (!CheckCommandCallToken(token, out TokenCheckError? error))
-                    {
-                        if (error == null || error.Token == null || error.MessageID == null)
-                            throw new ApplicationException("Incorrect error returned.");
-                        TextPosition pos = new(line.InputLineIndex, error.Token.StartColumn);
-                        messages.Add(new SourceCodeMessage(file, pos, error.Token.Content.Length, SourceCodeMessage.MessageType.Error, error.MessageID.Value, error.Args));
-                    }
-                }
-            }
-            catch (PotentialCommandInvocationException ex)
-            {
-                // Ищем проблемную лексему
-                int commandTokenIndex = -1;
-                for (int i = 0; i < line.Lexemes.Count; i++) // @FIXME: Кто-то крадёт токены из Lexemes. Их меньше, чем должно быть
-                {
-                    if (line.Lexemes[i].StartColumn == ex.PotentialCommandToken.StartColumn)
-                    {
-                        commandTokenIndex = i;
-                        break;
-                    }
-                }
-                if (commandTokenIndex == -1)
-                    throw new ArgumentException(); // Не получилось найти проблемную лексему в строке
-
-                // Репарсим строку
-                try
-                {
-                    List<Token> tokens = line.Lexemes[commandTokenIndex..];
-                    foreach (Token token in tokens)
-                        token.Children.Clear();
-                    _parser.ParseTokens(tokens);
-                    rootTokens = [.. _parser.RootTokens];
-                    goto lintingRootTokens;
-                }
-                catch (UnexpectedTokenException unexpectedTokenEx)
-                {
-                    TextPosition pos = new(line.InputLineIndex, unexpectedTokenEx.Token.StartColumn);
-                    int length = unexpectedTokenEx.Token.Content.Length;
-                    var msg = new SourceCodeMessage(file, pos, length, SourceCodeMessage.MessageType.Error, MessageID.ERR_UNEXPECTED_TOKEN, [unexpectedTokenEx.Token.ToString()]);
-                    messages.Add(msg);
-                }
+                LintLine(fileUnit, line);
             }
             catch (Exception ex)
             {
-                OutputHandler.PrintError(ex.Message);
+                OutputHandler.PrintLintingFailure(fileUnit, line, ex);
             }
         }
+    }
 
-        return [.. messages];
+    public void LintLine(ScriptUnit fileUnit, ProcessedLine line)
+    {
+        bool needReparse;
+        List<Token> rootTokens = line.Tokens;
+        do
+        {
+            needReparse = false;
+            foreach (Token token in rootTokens)
+            {
+                if (token.Type != TokenType.Identifier)
+                    continue;
+                Result<object, TokenCheckError> checkResult = CheckCommandCallToken(token);
+                if (!checkResult.IsError)
+                    return;
+                
+                if (checkResult.Error.Token == null || checkResult.Error.MessageID == null)
+                    throw new ApplicationException("Incorrect error returned.");
+                if (checkResult.Error.MessageID != MessageID.POTENTIAL_COMMAND)
+                {
+                    AddErrorToFile(fileUnit, line.InputLineIndex, checkResult.Error.Token.Value, (MessageID)checkResult.Error.MessageID, checkResult.Error.Args);
+                    return;
+                }
+
+                // Ищем проблемную лексему
+                int commandTokenIndex = line.Lexemes.FindIndex(lexeme => lexeme.StartColumn == checkResult.Error.Token.Value.StartColumn);
+                if (commandTokenIndex == -1)
+                    throw new ArgumentException("Can not find potential command lexeme index.");
+
+                // Репарсим строку
+                List<Token> potentialCommandTokens = line.Lexemes[commandTokenIndex..];
+                foreach (Token tokenToClear in potentialCommandTokens)
+                    tokenToClear.Children.Clear();
+                Result<List<Token>, Token> reparseResult = OnsParser.ParseTokens(potentialCommandTokens);
+                if (reparseResult.IsError)
+                {
+                    AddErrorToFile(fileUnit, line.InputLineIndex, reparseResult.Error, MessageID.ERR_UNEXPECTED_TOKEN, [reparseResult.Error.ToString()]);
+                    return;
+                }
+                rootTokens = reparseResult.Value;
+                needReparse = true;
+            }
+        }
+        while (needReparse);
+    }
+
+    private static void AddErrorToFile(ScriptUnit fileUnit, int line, Token errorToken, MessageID messageId, string[] args)
+    {
+        TextPosition pos = new(line, errorToken.StartColumn);
+        ScriptMessage msg = new(fileUnit, pos, errorToken.Content.Length, ScriptMessage.MessageType.Error, messageId, args);
+        fileUnit.ProcessingMessages.Add(msg);
     }
 
     private bool IsTokenNumeric(Token token)
@@ -151,7 +140,7 @@ public partial class OnsLinter
         switch (token.Type)
         {
             case TokenType.Identifier:
-                return _scriptContext.NumaliasDefinitions.ContainsKey(token.Content.ToLower());
+                return _scriptContext.Numaliases.ContainsKey(token.Content.ToLower());
             case TokenType.Number:
                 return true;
             case TokenType.Variable:
@@ -166,7 +155,7 @@ public partial class OnsLinter
         switch (token.Type)
         {
             case TokenType.Identifier:
-                return _scriptContext.StraliasDefinitions.ContainsKey(token.Content);
+                return _scriptContext.Straliases.ContainsKey(token.Content.ToLower());
             case TokenType.String:
                 return true;
             case TokenType.Variable:
@@ -175,5 +164,14 @@ public partial class OnsLinter
                 return false;
         }
     }
+	
+	private static Result<object, TokenCheckError> MakeCheckErrorResult(Token token, MessageID messageID, params string[] args) =>
+		Result<object, TokenCheckError>.Fail(new TokenCheckError(token, messageID, args));
+	private static Result<object, TokenCheckError> MakeCheckOkResult() =>
+		Result<object, TokenCheckError>.Ok(null);
+	
+	private static Result<bool, TokenCheckError> MakeIsNumericErrorResult(Token token, MessageID messageID, params string[] args) =>
+		Result<bool, TokenCheckError>.Fail(new TokenCheckError(token, messageID, args));
+	private static Result<bool, TokenCheckError> MakeIsNumericOkResult(bool isNumeric) =>
+		Result<bool, TokenCheckError>.Ok(isNumeric);
 }
-#nullable restore

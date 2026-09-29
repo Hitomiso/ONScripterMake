@@ -1,4 +1,4 @@
-namespace Hitomiso.ONScripterMake;
+namespace ONSMake;
 
 public enum DataType
 {
