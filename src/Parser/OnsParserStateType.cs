@@ -14,5 +14,7 @@ public enum OnsParserStateType
 	ForFrom,
 	ForTo,
 	ForStep,
-	DialogParameter
+	DialogParameter,
+	InlineCommand,
+	InlineCommandParameter
 }

@@ -25,9 +25,6 @@ public class ParserContext
 		{TokenType.ParsedModulo, 5},
 	};
 
-    //public int StackCount { get => _stateStack.Count; }
-    // Если обработчики принадлежат одному контексту, то проще хранить пул обработчиков вот тут
-    
     public readonly List<Token> RootTokens = [];
     private readonly Stack<ParserStateHandler> _stateStack = [];
     private readonly OnsParserStatePool _statePool = new();

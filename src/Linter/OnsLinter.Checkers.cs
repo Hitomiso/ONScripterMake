@@ -3,6 +3,8 @@ using System.Linq;
 using System.Collections.Generic;
 using ONSMake.Lexer;
 using ONSMake.Parser;
+using ONSMake.Processing;
+using System.Text;
 
 namespace ONSMake.Linter;
 
@@ -11,29 +13,40 @@ public partial class OnsLinter
 {
 	private Result<object, TokenCheckError> CheckCommandCallToken(Token commandToken)
 	{
-		Result<object, TokenCheckError> checkResult;
-		
-		string cmdName = commandToken.Content.ToLower();
-		if (_scriptContext.CustomCommands.ContainsKey(cmdName))
+		bool isExplicitlyBuiltIn = false;
+        string cmdName;
+        if (commandToken.Content.Length > 0 && commandToken.Content[0] == '_')
         {
-            // @FIXME: Кастомные команды пока пропускаем
-			return MakeCheckOkResult();
+            cmdName = commandToken.Content[1..].ToString();
+            isExplicitlyBuiltIn = true;
         }
-		
-		if (cmdName.Length > 0 && cmdName[0] == '_')
-			cmdName = cmdName[1..];
-		if (cmdName == "getparam")
-		{
-			checkResult = CheckGetParamCommandCall(commandToken);
-            if (checkResult.IsError)
-                return checkResult;
-			return MakeCheckOkResult();
-		}
-		if (!_defaultCommands.ContainsKey(cmdName))
+        else
+        {
+            cmdName = commandToken.Content.ToString();
+        }
+
+		if (!isExplicitlyBuiltIn && _scriptContext.CustomCommands.TryGetValue(cmdName, out CommandDefinition? definition))
+			return CheckCustomCommandParameters(commandToken, definition);
+
+        Result<object, TokenCheckError> checkResult;
+        switch (cmdName)
+        {
+            case "getparam":
+                checkResult = CheckGetParamCommandCall(commandToken);
+                if (checkResult.IsError)
+                    return checkResult;
+                return MakeCheckOkResult();
+            case "d":
+            case "d2":
+                checkResult = CheckDialogCommandCall(commandToken, cmdName == "d2");
+                if (checkResult.IsError)
+                    return checkResult;
+                return MakeCheckOkResult();
+        }
+		if (!_defaultCommands.TryGetValue(cmdName, out List<Command>? cmdDefinitions))
 			return MakeCheckErrorResult(commandToken, MessageID.ERR_UNKNOWN_COMMAND, cmdName);
 		
-		// Находим и проверяем все перегрузки стандартных команд
-		List<Command> cmdDefinitions = _defaultCommands[cmdName];
+		// Находим и проверяем все перегрузки стандартной команды
 		for (int i = 0; i < cmdDefinitions.Count; i++)
 		{
 			checkResult = CheckCommandParameters(commandToken, cmdDefinitions[i]);
@@ -44,41 +57,44 @@ public partial class OnsLinter
 		}
 		return MakeCheckOkResult();
 	}
-	
+    
 	private Result<object, TokenCheckError> CheckGetParamCommandCall(Token getParamCommandToken)
 	{
 		// Читаем переменные, массивы и указатели на переменные
-		foreach (var parameterToken in getParamCommandToken.Children)
-		{
-			if (parameterToken.Type != TokenType.Variable && parameterToken.Type != TokenType.IndexVariable)
-				return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
-			switch (parameterToken.Content)
-			{
-				case "%":
-				case "$":
-				case "?":
-				case "i%":
-					Result<object, TokenCheckError> checkResult = CheckTokenChildren(parameterToken);
-					if (checkResult.IsError)
-						return checkResult;
-					break;
-				default:
-					return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
-			}
-		}
+        for (int i = 0; i < getParamCommandToken.Children.Count; i++)
+        {
+            Token parameterToken = getParamCommandToken.Children[i];
+            if (parameterToken.Type != TokenType.Variable && parameterToken.Type != TokenType.IndexVariable)
+                return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
+            switch (parameterToken.Content)
+            {
+                case "%":
+                case "$":
+                case "?":
+                case "i%":
+                    Result<object, TokenCheckError> checkResult = CheckTokenChildren(parameterToken);
+                    if (checkResult.IsError)
+                        return checkResult;
+                    break;
+                default:
+                    return MakeCheckErrorResult(parameterToken, MessageID.ERR_NUMVAR_EXPECTED);
+            }
+        }
 		return MakeCheckOkResult();
 	}
 
     private Result<object, TokenCheckError> CheckCommandParameters(Token commandToken, Command definition)
     {
 		Result<object, TokenCheckError> checkResult;
-		
-		List<Token> commandParameterTokens = [..commandToken.Children];
-        for (int i = 0; i < commandParameterTokens.Count; i++)
+
+        //List<Token> commandParameterTokens = [..commandToken.Children];
+        //for (int i = 0; i < commandParameterTokens.Count; i++)
+        for (int i = 0; i < commandToken.Children.Count; i++)
         {
             // Сравниваем имеющиеся параметры с ожидаемыми
-			Token receivedParamToken = commandParameterTokens[i];
-			Parameter param;
+            //Token receivedParamToken = commandParameterTokens[i];
+            Token receivedParamToken = commandToken.Children[i];
+            Parameter param;
             if (i >= definition.Parameters.Length)
 			{
                 if (definition.Parameters.Length == 0 || !definition.Parameters[^1].Repeat)
@@ -90,7 +106,7 @@ public partial class OnsLinter
                         potentialCommandToken = receivedParamToken;
                     if (potentialCommandToken.Type != TokenType.Identifier)
 						return MakeCheckErrorResult(potentialCommandToken, MessageID.ERR_TOO_MANY_PARAMETERS);
-                    return MakeCheckErrorResult(potentialCommandToken, MessageID.POTENTIAL_COMMAND);
+                    return MakeCheckErrorResult(potentialCommandToken, MessageID._POTENTIAL_COMMAND);
                 }
                 param = definition.Parameters[^1];
 			}
@@ -101,8 +117,8 @@ public partial class OnsLinter
             if (param.Type == DataType.Effect)
             {
                 // Effect: NUM[,NUM[,NUM[,STR]]]
-                Parameter NUM_PARAM = new(DataType.Num, "num");
-                Parameter STR_PARAM = new(DataType.Str, "str");
+                Parameter NUM_PARAM = new(DataType.Num);
+                Parameter STR_PARAM = new(DataType.Str);
 
                 Token effectNumToken = receivedParamToken;
                 Token? effectDurationToken = null;
@@ -118,7 +134,7 @@ public partial class OnsLinter
                     return checkResult;
                 if (effectNumToken.Type == TokenType.Number)
                 {
-                    int effectNum = Convert.ToInt32(effectNumToken.Content);
+                    int effectNum = int.Parse(effectNumToken.Content);
                     if (effectDurationToken != null)
                     {
                         if (effectNum == 1)
@@ -134,7 +150,7 @@ public partial class OnsLinter
                 }
                 if (effectDurationToken != null)
                 {
-                    if (((Token)effectDurationToken).Type == TokenType.Number && Convert.ToInt32(((Token)effectDurationToken).Content) < 1)
+                    if (((Token)effectDurationToken).Type == TokenType.Number && int.Parse(((Token)effectDurationToken).Content) < 1)
 						return MakeCheckErrorResult((Token)effectDurationToken, MessageID.ERR_INVALID_EFFECT_DURATION);
 					checkResult = CheckIsParameterAcceptable((Token)effectDurationToken, NUM_PARAM);
                     if (checkResult.IsError)
@@ -157,6 +173,56 @@ public partial class OnsLinter
         }
 		return MakeCheckOkResult();
     }
+
+	private Result<object, TokenCheckError> CheckCustomCommandParameters(Token commandToken, CommandDefinition definition)
+	{
+		if (commandToken.Children.Count > definition.ParameterTypes.Length)
+			return MakeCheckErrorResult(commandToken.Children[definition.ParameterTypes.Length], MessageID.ERR_TOO_MANY_PARAMETERS);
+		
+		Parameter NUM_PARAM = new(DataType.Num);
+        Parameter STR_PARAM = new(DataType.Str);
+		Parameter NUMVAR_PARAM = new(DataType.NumVar);
+		Parameter STRVAR_PARAM = new(DataType.StrVar);
+		Parameter selectedParam;
+		Result<object, TokenCheckError> checkResult;
+		
+		for (int i = 0; i < definition.ParameterTypes.Length; i++)
+		{
+			DataType parameterType = definition.ParameterTypes[i];
+			if (i >= commandToken.Children.Count)
+			{
+				if (parameterType == DataType.AnyVar)
+					return MakeCheckErrorResult(commandToken, MessageID.ERR_TOO_FEW_PARAMETERS);
+				continue;
+			}
+			Token token = commandToken.Children[i];
+			switch (parameterType)
+			{
+				case DataType.Num:
+					selectedParam = NUM_PARAM;
+					break;
+				case DataType.Str:
+					selectedParam = STR_PARAM;
+					break;
+				case DataType.AnyVar:
+                    Result<bool, TokenCheckError> isNumericResult = GuessIsOperandNumeric(token);
+                    if (isNumericResult.IsError)
+                        return Result<object, TokenCheckError>.Fail(isNumericResult.Error);
+                    if (isNumericResult.Value)
+						selectedParam = NUMVAR_PARAM;
+					else
+						selectedParam = STRVAR_PARAM;
+					break;
+				default:
+					return MakeCheckErrorResult(token, MessageID.ERR_U_STUPIT);
+			}
+			
+			checkResult = CheckIsParameterAcceptable(token, selectedParam);
+			if (checkResult.IsError)
+				return checkResult;
+		}
+        return MakeCheckOkResult();
+	}
 
     private Result<object, TokenCheckError> CheckIsParameterAcceptable(Token token, Parameter definition)
     {
@@ -226,31 +292,24 @@ public partial class OnsLinter
 		Result<object, TokenCheckError> checkResult = CheckTokenChildren(operandToken);
         if (checkResult.IsError)
             return checkResult;
-        if (operandToken.Type == TokenType.Identifier)
-        {
-            if (isNumeric)
-            {
-                if (!_scriptContext.Numaliases.ContainsKey(operandToken.Content.ToLower()))
-					return MakeCheckErrorResult(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
-            }
-            else
-            {
-                if (!_scriptContext.Straliases.ContainsKey(operandToken.Content.ToLower()))
-					return MakeCheckErrorResult(operandToken, MessageID.ERR_STRALIAS_NOT_DEFINED, operandToken.Content);
-            }
-			return MakeCheckOkResult();
-        }
+
         if (isNumeric)
         {
-            if (!IsTokenNumeric(operandToken))
-				return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_NUMBER);
+            Result<bool, TokenCheckError> isNumericResult = GuessIsOperandNumeric(operandToken);
+            if (isNumericResult.IsError)
+                return Result<object, TokenCheckError>.Fail(isNumericResult.Error);
+            if (!isNumericResult.Value)
+                return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_NUMBER);
         }
         else
         {
-            if (!IsTokenString(operandToken))
-				return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_STRING);
+            Result<bool, TokenCheckError> isStringResult = GuessIsOperandString(operandToken);
+            if (isStringResult.IsError)
+                return Result<object, TokenCheckError>.Fail(isStringResult.Error);
+            if (!isStringResult.Value)
+                return MakeCheckErrorResult(operandToken, MessageID.ERR_NOT_A_STRING);
         }
-		return MakeCheckOkResult();
+        return MakeCheckOkResult();
     }
 
     private Result<object, TokenCheckError> CheckLogicExpression(Token operatorToken)
@@ -311,32 +370,83 @@ public partial class OnsLinter
 
     private Result<bool, TokenCheckError> GuessIsOperandNumeric(Token operandToken)
     {
-        if (operandToken.Type == TokenType.Identifier)
+        if (ARITHMETIC_OPERATORS.Contains(operandToken.Type))
         {
-            if (_scriptContext.Numaliases.ContainsKey(operandToken.Content.ToLower()))
-				return MakeIsNumericOkResult(true);
-            if (_scriptContext.Straliases.ContainsKey(operandToken.Content.ToLower()))
-				return MakeIsNumericOkResult(false);
-			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, operandToken.Content);
+            if (operandToken.Children.Count == 0)
+                return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_MISSING_FIRST_OPERAND);
+            if (operandToken.Children.Count == 1)
+                return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_MISSING_SECOND_OPERAND);
+            var opA = operandToken.Children[0];
+            var opB = operandToken.Children[1];
+            var opACheckResult = GuessIsOperandNumeric(opA);
+            var opBCheckResult = GuessIsOperandNumeric(opB);
+            if (opACheckResult.IsError)
+                return opACheckResult;
+            if (opBCheckResult.IsError)
+                return opBCheckResult;
+            if (opACheckResult.Value != opBCheckResult.Value)
+                return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_INVALID_OPERAND_TYPE);
+            return opACheckResult;
         }
-        if (!ARITHMETIC_OPERATORS.Contains(operandToken.Type))
-			return MakeIsNumericOkResult(IsTokenNumeric(operandToken));
 
-		if (operandToken.Children.Count == 0)
-			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_MISSING_FIRST_OPERAND);
-		if (operandToken.Children.Count == 1)
-			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_MISSING_SECOND_OPERAND);
-		var opA = operandToken.Children[0];
-		var opB = operandToken.Children[1];
-		var opACheckResult = GuessIsOperandNumeric(opA);
-		var opBCheckResult = GuessIsOperandNumeric(opB);
-		if (opACheckResult.IsError)
-			return opACheckResult;
-		if (opBCheckResult.IsError)
-			return opBCheckResult;
-		if (opACheckResult.Value != opBCheckResult.Value)
-			return MakeIsNumericErrorResult(operandToken, MessageID.ERR_INVALID_OPERAND_TYPE);
-		return opACheckResult;
+        switch (operandToken.Type)
+        {
+            case TokenType.Identifier:
+                string name = operandToken.Content.ToString();
+                if (_scriptContext.Numaliases.ContainsKey(name))
+                    return MakeTypeGuessOkResult(true);
+                if (_scriptContext.Straliases.ContainsKey(name))
+                    return MakeTypeGuessOkResult(false);
+                return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, name);
+            case TokenType.Number:
+                return MakeTypeGuessOkResult(true);
+            case TokenType.Variable:
+                Result<object, TokenCheckError> checkResult = CheckTokenChildren(operandToken);
+                if (checkResult.IsError)
+                    return MakeTypeGuessErrorResult(checkResult.Error);
+                bool isStringVar = operandToken.Content.SequenceEqual("$");
+                return MakeTypeGuessOkResult(!isStringVar);
+        }
+        return MakeTypeGuessOkResult(false);
+    }
+
+    private Result<bool, TokenCheckError> GuessIsOperandString(Token operandToken)
+    {
+        switch (operandToken.Type)
+        {
+            case TokenType.Add:
+                if (operandToken.Children.Count == 0)
+                    return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_MISSING_FIRST_OPERAND);
+                if (operandToken.Children.Count == 1)
+                    return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_MISSING_SECOND_OPERAND);
+                var opA = operandToken.Children[0];
+                var opB = operandToken.Children[1];
+                var opACheckResult = GuessIsOperandString(opA);
+                var opBCheckResult = GuessIsOperandString(opB);
+                if (opACheckResult.IsError)
+                    return opACheckResult;
+                if (opBCheckResult.IsError)
+                    return opBCheckResult;
+                if (opACheckResult.Value != opBCheckResult.Value)
+                    return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_INVALID_OPERAND_TYPE);
+                return opACheckResult;
+            case TokenType.Identifier:
+                string name = operandToken.Content.ToString();
+                if (_scriptContext.Straliases.ContainsKey(name))
+                    return MakeTypeGuessOkResult(true);
+                if (_scriptContext.Numaliases.ContainsKey(name))
+                    return MakeTypeGuessOkResult(false);
+                return MakeTypeGuessErrorResult(operandToken, MessageID.ERR_STRALIAS_NOT_DEFINED, name);
+            case TokenType.String:
+                return MakeTypeGuessOkResult(true);
+            case TokenType.Variable:
+                Result<object, TokenCheckError> checkResult = CheckTokenChildren(operandToken);
+                if (checkResult.IsError)
+                    return MakeTypeGuessErrorResult(checkResult.Error);
+                bool isStringVar = operandToken.Content.SequenceEqual("$");
+                return MakeTypeGuessOkResult(isStringVar);
+        }
+        return MakeTypeGuessOkResult(false);
     }
 
 
@@ -366,7 +476,7 @@ public partial class OnsLinter
     {
         if (parent.Type != TokenType.Variable)
             throw new ArgumentException("Variable or array parent expected.");
-        if (parent.Content == "?")
+        if (parent.Content.SequenceEqual("?"))
             return CheckArrayChildren(parent);
         else
             return CheckVariableChildren(parent);
@@ -376,23 +486,23 @@ public partial class OnsLinter
     {
         if (parent.Children.Count != 1)
 			return MakeCheckErrorResult(parent, MessageID.ERR_VAR_WITHOUT_NUM);
-
         var varNumberToken = parent.Children[0];
-        if (!IsTokenNumeric(varNumberToken))
-			return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NOT_A_NUMBER);
-        if (varNumberToken.Type == TokenType.Identifier)
+
+        switch (varNumberToken.Type)
         {
-            if (!_scriptContext.Numaliases.ContainsKey(varNumberToken.Content.ToLower()))
-				return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, varNumberToken.Content);
+            case TokenType.Identifier:
+            case TokenType.Variable:
+            case TokenType.Number:
+                Result<bool, TokenCheckError> isNumericResult = GuessIsOperandNumeric(varNumberToken);
+                if (isNumericResult.IsError)
+                    return Result<object, TokenCheckError>.Fail(isNumericResult.Error);
+                if (!isNumericResult.Value)
+                    return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NOT_A_NUMBER);
+                break;
+            default:
+                return MakeCheckErrorResult(varNumberToken, MessageID.ERR_NOT_A_NUMBER);
         }
-        else if (varNumberToken.Type == TokenType.Variable)
-        {
-            if (varNumberToken.Content == "%")
-                return CheckVariableChildren(varNumberToken);
-            else if (varNumberToken.Content == "?")
-                return CheckArrayChildren(varNumberToken);
-        }
-		return MakeCheckOkResult();
+        return MakeCheckOkResult();
     }
 
     private Result<object, TokenCheckError> CheckArrayChildren(Token parent)
@@ -402,27 +512,20 @@ public partial class OnsLinter
         if (parent.Children.Count < 2)
 			return MakeCheckErrorResult(parent, MessageID.ERR_ARRAY_WITHOUT_INDEX);
         var arrayNumberToken = parent.Children[0];
-        if (!IsTokenNumeric(arrayNumberToken))
-			return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NOT_A_NUMBER);
-        if (arrayNumberToken.Type == TokenType.Identifier)
+
+        switch (arrayNumberToken.Type)
         {
-            if (!_scriptContext.Numaliases.ContainsKey(arrayNumberToken.Content.ToLower()))
-				return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NUMALIAS_NOT_DEFINED, arrayNumberToken.Content);
-        }
-        else if (arrayNumberToken.Type == TokenType.Variable)
-        {
-            if (arrayNumberToken.Content == "%")
-            {
-				checkResult = CheckVariableChildren(arrayNumberToken);
-                if (checkResult.IsError)
-                    return checkResult;
-            }
-            else if (arrayNumberToken.Content == "?")
-            {
-				checkResult = CheckArrayChildren(arrayNumberToken);
-                if (checkResult.IsError)
-                    return checkResult;
-            }
+            case TokenType.Identifier:
+            case TokenType.Variable:
+            case TokenType.Number:
+                Result<bool, TokenCheckError> isNumericResult = GuessIsOperandNumeric(arrayNumberToken);
+                if (isNumericResult.IsError)
+                    return Result<object, TokenCheckError>.Fail(isNumericResult.Error);
+                if (!isNumericResult.Value)
+                    return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NOT_A_NUMBER);
+                break;
+            default:
+                return MakeCheckErrorResult(arrayNumberToken, MessageID.ERR_NOT_A_NUMBER);
         }
 
         for (int i = 1; i < parent.Children.Count; i++)

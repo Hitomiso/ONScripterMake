@@ -12,7 +12,7 @@ public static class OnsParser
 {
 	private static readonly ConcurrentBag<ParserContext> s_contextPool = [];
 	
-    public static Result<List<Token>, Token> ParseTokens(List<Token> tokens)
+    public static Result<Token[], Token> ParseTokens(Token[] tokens)
     {
         if (!s_contextPool.TryTake(out ParserContext context))
             context = new ParserContext();
@@ -23,18 +23,18 @@ public static class OnsParser
 			{
 				context.PushToken(token, out bool success);
 				if (!success)
-					return Result<List<Token>, Token>.Fail(token);
+					return Result<Token[], Token>.Fail(token);
 			}
 		}
 		catch (Exception ex)
 		{
-			OutputHandler.PrintParsingFailure(tokens, context.RootTokens, ex);
-            return Result<List<Token>, Token>.Fail(tokens.First());
+			OutputHandler.PrintParsingFailure(tokens, context.RootTokens.ToArray(), ex);
+            return Result<Token[], Token>.Fail(tokens.First());
 		}
 		((StartOfLineState)context.ResetToNewState(OnsParserStateType.StartOfLine)).Recycle();
-        List<Token> parsedTokens = [.. context.RootTokens];
+        Token[] parsedTokens = context.RootTokens.ToArray();
         s_contextPool.Add(context);
-        return Result<List<Token>, Token>.Ok(parsedTokens);
+        return Result<Token[], Token>.Ok(parsedTokens);
     }
 }
 #nullable restore

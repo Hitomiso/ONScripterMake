@@ -11,7 +11,7 @@ namespace ONSMake.Processing;
 public sealed partial class ScriptProcessor
 {
     private readonly ProjectConfiguration _config;
-	private delegate Result<string[], DirectiveError> _directiveHandler(ScriptUnit unit, List<Token> parameters);
+	private delegate Result<string[], DirectiveError> _directiveHandler(ScriptUnit unit, Token[] parameters);
 	private Dictionary<string, _directiveHandler> _directiveHandlers = [];
 	private readonly int _createdThreadId = Environment.CurrentManagedThreadId;
 	
@@ -25,13 +25,13 @@ public sealed partial class ScriptProcessor
     private bool _nvlIsWritingOutputDialogue = false;
 	
 	private List<MessageID> _currentDisabledErrors = [];
+	private string? _currentRoutineLabel = null;
 	
     public ScriptProcessor(ProjectConfiguration config)
     {
 		_config = config;
 		_directiveHandlers.Add("#dlg_autolabel", DlgAutolabelDirective);
         _directiveHandlers.Add("#incremental_label", IncrementalLabelDirective);
-        _directiveHandlers.Add("#pragma", PragmaDirective);
 	}
 	
 	public void ProcessScriptUnit(ScriptUnit unit)
@@ -57,7 +57,7 @@ public sealed partial class ScriptProcessor
 					Token token = processResult.Error.Token;
 					TextPosition pos = new(i, token.StartColumn);
 					var msg = new ScriptMessage(unit, pos, token.Content.Length, ScriptMessage.MessageType.Error, processResult.Error.MessageID, processResult.Error.Args);
-					unit.ProcessingMessages.Add(msg);
+					unit.AddMessage(msg);
 				}
                 unit.OutputLines.Add(new ProcessedLine(i, line, [], []));
             }
@@ -90,28 +90,32 @@ public sealed partial class ScriptProcessor
 	private Result<List<ProcessedLine>, ProcessError> PreprocessLine(ScriptUnit unit, string line, int inputLineIndex)
 	{
 		List<ProcessedLine> processed = [];
-		Result<List<Token>, LexerError> tokenizingResult = OnsLexer.TokenizeLine(line);
+		Result<Token[], LexerError> tokenizingResult = OnsLexer.TokenizeLine(line);
 		if (tokenizingResult.IsError)
 		{
-			string invalidContent = line[tokenizingResult.Error.Column].ToString();
-            Token invalidToken = new(TokenType.Invalid, invalidContent, tokenizingResult.Error.Column);
-			ProcessError error = new(invalidToken, tokenizingResult.Error.MessageID, [invalidContent]);
+            Token invalidToken = new(TokenType.Invalid, line, tokenizingResult.Error.Column, 1);
+            ProcessError error = new(invalidToken, tokenizingResult.Error.MessageID, [invalidToken.Content.ToString()]);
             return Result<List<ProcessedLine>, ProcessError>.Fail(error);
         }
 		
 		// Активный препроцессинг
-		if (tokenizingResult.Value.Count > 0 && tokenizingResult.Value[0].Type == TokenType.Directive)
+		if (tokenizingResult.Value.Length > 0 && tokenizingResult.Value[0].Type == TokenType.Directive)
 		{
 			if (_config.IgnoreDirectives)
 				processed.Add(new ProcessedLine(inputLineIndex, line, tokenizingResult.Value, []));
 			else
-				PreprocessDirective(unit, line, tokenizingResult.Value, inputLineIndex);
+			{
+                Result<List<ProcessedLine>, ProcessError> directiveResult = PreprocessDirective(unit, line, tokenizingResult.Value, inputLineIndex);
+				if (directiveResult.IsError)
+					return directiveResult;
+				processed.AddRange(directiveResult.Value);
+            }
 		}
 		else
 		{
-			Result<List<Token>, Token> parseResult = OnsParser.ParseTokens(tokenizingResult.Value);
+			Result<Token[], Token> parseResult = OnsParser.ParseTokens(tokenizingResult.Value);
 			if (parseResult.IsError)
-				return MakeErrorResult(parseResult.Error, MessageID.ERR_UNEXPECTED_TOKEN, [parseResult.Error.ToString()]);
+				return MakeErrorResult(parseResult.Error, MessageID.ERR_UNEXPECTED_TOKEN, [parseResult.Error.Type.ToString()]);
 			processed.Add(new ProcessedLine(inputLineIndex, line, tokenizingResult.Value, parseResult.Value));
 		}
 		
@@ -134,8 +138,7 @@ public sealed partial class ScriptProcessor
 		{
 			if (token.Type != TokenType.Identifier)
 				continue;
-			string name = token.Content.ToLower();
-			if (name == "d" || name == "d2")
+			if (token.Content.SequenceEqual("d") || token.Content.SequenceEqual("d2"))
 			{
 				dialogToken = token;
 				break;
@@ -162,15 +165,14 @@ public sealed partial class ScriptProcessor
 		}
 	}
 	
-	private Result<List<ProcessedLine>, ProcessError> PreprocessDirective(ScriptUnit unit, string line, List<Token> tokens, int lineIndex)
+	private Result<List<ProcessedLine>, ProcessError> PreprocessDirective(ScriptUnit unit, string line, Token[] tokens, int lineIndex)
 	{
-        if (tokens.Count == 0)
+        if (tokens.Length == 0)
             throw new ArgumentException("ProcessDirective method should receive at least one token.");
-        string name = tokens[0].Content.ToLower();
 
         var getDialogContent = () => line[(tokens[0].StartColumn + tokens[0].Content.Length)..].Trim();
 		Result<string[], DirectiveError> result;
-        switch (name)
+        switch (tokens[0].Content)
 	    {
 			case "#n":
                 result = NDirective(unit, getDialogContent());
@@ -181,7 +183,11 @@ public sealed partial class ScriptProcessor
             case "#end":
                 result = EndDirective();
                 break;
+			case "#ignore":
+				result = IgnoreDirective(unit, tokens[1..], lineIndex);
+				break;
 			default:
+				string name = tokens[0].Content.ToString();
                 if (!_directiveHandlers.TryGetValue(name, out _directiveHandler handler))
                     return Result<List<ProcessedLine>, ProcessError>.Fail(new ProcessError(tokens[0], MessageID.ERR_UNKNOWN_DIRECTIVE, name));
 				result = handler(unit, tokens[1..]);
@@ -202,17 +208,23 @@ public sealed partial class ScriptProcessor
         return Result<List<ProcessedLine>, ProcessError>.Ok(processed);
     }
 
-    private static Result<object, ProcessError> RegisterDefinitions(ScriptUnit unit, Token token, int inputLineIndex)
+    private Result<object, ProcessError> RegisterDefinitions(ScriptUnit unit, Token token, int inputLineIndex)
 	{
+		if (token.Type == TokenType.ParsedLabel)
+		{
+			_currentRoutineLabel = token.Content.ToString().ToLower();
+			return RegisterLabel(unit, token, inputLineIndex);
+		}
 		if (token.Type == TokenType.Comment)
 		    return RegisterComment(unit, token, inputLineIndex);
-		if (token.Type == TokenType.ParsedLabel)
-			return RegisterLabel(unit, token, inputLineIndex);
 		if (token.Type != TokenType.Identifier)
-            return MakeEmptyOkResult();
+			return MakeEmptyOkResult();
+        if (_currentRoutineLabel != null && token.Content.SequenceEqual("getparam"))
+            RegisterSubroutineParameters(unit, token);
+        _currentRoutineLabel = null;
         
 		TextPosition pos = new(inputLineIndex, token.StartColumn);
-		switch (token.Content.ToLower())
+		switch (token.Content)
 		{
 			case "numalias":
 				return RegisterNumalias(unit, token, pos);
@@ -229,26 +241,27 @@ public sealed partial class ScriptProcessor
 	{
 	    if (commandToken.Children.Count == 0 || commandToken.Children[0].Type != TokenType.Identifier)
 			return Result<string, ProcessError>.Fail(new ProcessError(commandToken, MessageID.ERR_TOO_FEW_PARAMETERS));
-		return Result<string, ProcessError>.Ok(commandToken.Children[0].Content.ToLower());
+		return Result<string, ProcessError>.Ok(commandToken.Children[0].Content.ToString());
 	}
 
     private static Result<object, ProcessError> RegisterComment(ScriptUnit unit, Token token, int lineIndex)
 	{
 	    int todoIndex = token.Content.IndexOf("TODO:", StringComparison.Ordinal);
 		int fixmeIndex = token.Content.IndexOf("FIXME:", StringComparison.Ordinal);
-		int noteStartIndex = todoIndex >= 0 ? todoIndex : fixmeIndex;
+		int noteIndex = token.Content.IndexOf("NOTE:", StringComparison.Ordinal);
+		int noteStartIndex = Math.Max(Math.Max(todoIndex, fixmeIndex), noteIndex);
 		if (noteStartIndex >= 0)
 		{
-			string messageText = token.Content[noteStartIndex..];
+			string messageText = token.Content[noteStartIndex..].ToString();
 			TextPosition messagePos = new(lineIndex, token.StartColumn);
-			unit.ProcessingMessages.Add(new ScriptMessage(unit, messagePos, token.Content.Length, ScriptMessage.MessageType.Info, MessageID.INFO_NOTE, [messageText]));
+			unit.AddMessage(new ScriptMessage(unit, messagePos, token.Content.Length, ScriptMessage.MessageType.Info, MessageID.INFO_NOTE, [messageText]));
 		}
 		return MakeEmptyOkResult();
 	}
 
     private static Result<object, ProcessError> RegisterLabel(ScriptUnit unit, Token token, int lineIndex)
 	{
-	    string labelName = token.Content.ToLower();
+	    string labelName = token.Content.ToString().ToLower();
 		if (unit.Labels.TryGetValue(labelName, out TextPosition defPos))
 		{
             string firstDefinition = $"{unit.FileName}:{defPos.Line + 1}:{defPos.Column + 1}";
@@ -302,6 +315,39 @@ public sealed partial class ScriptProcessor
 		unit.Subroutines.Add(name, pos);
 		return MakeEmptyOkResult();
     }
+	
+	private void RegisterSubroutineParameters(ScriptUnit unit, Token getparamCommand)
+	{
+		if (_currentRoutineLabel == null)
+			return;
+		if (unit.SubroutineParameters.ContainsKey(_currentRoutineLabel))
+			return;
+
+		DataType[] parameters = new DataType[getparamCommand.Children.Count];
+		for (int i = 0; i < parameters.Length; i++)
+		{
+			Token child = getparamCommand.Children[i];
+			if (child.Type == TokenType.IndexVariable)
+			{
+				parameters[i] = DataType.AnyVar;
+			}
+			else if (child.Type == TokenType.Variable)
+			{
+				switch (child.Content)
+				{
+					case "%":
+					case "?":
+						parameters[i] = DataType.Num;
+						break;
+					case "$":
+						parameters[i] = DataType.Str;
+						break;
+				}
+			}
+		}
+		unit.SubroutineParameters.Add(_currentRoutineLabel, parameters);
+		_currentRoutineLabel = null;
+	}
 	
 	
 	private static Result<List<ProcessedLine>, ProcessError> MakeErrorResult(Token token, MessageID messageId, params string[] args) => 

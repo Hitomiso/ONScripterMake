@@ -46,16 +46,15 @@ public static class OutputHandler
     {
 		if (IsSilenced)
             return;
-		
+
+        string messageText = MessageTranslator.GetArgumentedString(message.MessageID, message.MessageArgs);
         string typeName;
         ConsoleColor typeColor;
         switch (message.Type)
         {
             case ScriptMessage.MessageType.Info:
-                typeName = "info: ";
-                typeColor = ConsoleColor.Green;
-                Infos++;
-                break;
+                PrintInfo(messageText, $"{message.FileUnit.FileName}:{message.Position.Line + 1}:{message.Position.Column + 1}");
+                return;
             case ScriptMessage.MessageType.Warning:
                 typeName = "warning: ";
                 typeColor = ConsoleColor.Yellow;
@@ -69,7 +68,7 @@ public static class OutputHandler
             default:
                 throw new ArgumentException($"Unexpected message type '{message.Type}'.");
         }
-        string messageText = MessageTranslator.GetArgumentedString(message.MessageID, message.MessageArgs);
+
         string trimmed = message.SourceLine.Replace("\t", " ").TrimStart();
         int underlineStart = message.Position.Column - (message.SourceLine.Length - trimmed.Length);
         trimmed = trimmed.TrimEnd();
@@ -90,7 +89,7 @@ public static class OutputHandler
         }
     }
 
-    public static void PrintParsingFailure(List<Token> lineTokens, List<Token> treeRootTokens, Exception ex)
+    public static void PrintParsingFailure(IEnumerable<Token> lineTokens, IEnumerable<Token> treeRootTokens, Exception ex)
     {
         Errors++;
         if (IsSilenced)

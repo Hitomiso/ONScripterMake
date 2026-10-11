@@ -1,11 +1,14 @@
 # ONScripter Make
-**A "build system" with built-in linter for ONScripter-RU (by Umineko Project) game scripts.**
+**ONScripter-RU (by Umineko Project) game scripts static analyzer and assembler.**
+
+(The author of this program is not associated with the Umineko Project team.)
 
 ## How does this work?
 - Reads a list of files to be included in an output script
-- Parses all lines in files, executes preprocessor directives, prints found parsing errors
-- Saves definitions (aliases, labels, commands) and checks engine command calls for any errors
+- Parses all lines in files, executes preprocessor directives, prints found parsing errors and todo notes
+- Saves definitions (aliases, labels, commands) and checks every command call for any errors
 - Concatenates processed files into an output script
+- Returns non-zero exit code if anything wrong happens, so this util can be used in building scripts
 
 ## How to use?
 1. Create file 'ONSMakeList.txt' with a list of files - parts of the final script
@@ -75,34 +78,35 @@
 	Appends dialog from the #n directive. Lines between #n and #e are automatically surrounded by `wait_on_d` and `d_continue`.
 - `#end`
 	Disables NVL-dialog mode, converts all added dialog parts into a single `d2` command call.
+- `#ignore <ERROR_CODE>`
+	Disables provided script message id from being shown. All possible values are in src/MessageID.cs
+- `#ignore off`
+	Enables all disabled messages back.
 
 ## ONSMakeList.txt example
 ```
-# Directory separator is different on different operating systems
-# Use \ on Windows
-# Use / on *nix-like systems
-define\define.ons
-define\sprites.txt
-define\variables.txt
-define\backgrounds.txt
-define\en\straliases.txt
+define/define.ons
+define/sprites.txt
+define/variables.txt
+define/backgrounds.txt
+define/en/straliases.txt
 # subroutines declarations
-define\subroutines.txt
+define/subroutines.txt
 
 # *start is here
 start.txt
 main_menu.txt
 
-# sample text
-story\episode1.txt
-story\episode2.txt
-story\episode3.txt
-story\episode4.txt
+# comment
+story/episode1.txt
+story/episode2.txt
+story/episode3.txt
+story/episode4.txt
 
 # subroutines definitions
-end\commands.txt
+end/commands.txt
 # other routines
-end\other.txt
+end/other.txt
 ```
 
 ## ONSMakeConfig.json example
@@ -125,6 +129,9 @@ In the "replaces" property there are tuples with replacement RegEx patterns ["wh
 
 ## Preprocessor directives usage example
 ```arm
+; FIXME: This will be displayed during script building
+; TODO: This will be displayed too
+; NOTE: And this
 #dlg_autolabel *d
 seplay 1,10,80
 wait 800
@@ -139,6 +146,11 @@ wait 800
 seplay 1,11,80
 #e `{n}{n}Even in this very moment, I trust her.`[\]
 #end
+; This translates to:
+; *d1
+; d2 `I trusted her.`[@][#][*]`{n}{n}...No, I still trust her.`[@][#][*]`{n}{n}Even in this very moment, I trust her.`[\]
+; wait_on_d 0
+; ;...
 #dlg_autolabel off
 
 #*d
@@ -148,8 +160,7 @@ d `I wonder what she's apologizing for.`[\]
 ```
 
 ## TODO
-1. Add support for custom commands in the linter.
-2. Optimize error handling in the lexer and parser.
-3. Add support for JSON5.
-4. Add a CLI option to specify the commands file.
-5. Support for error message localization.
+1. Optimize tokens tree containment
+2. Support for JSON5
+3. CLI option to specify the commands file
+4. Support for error message localization

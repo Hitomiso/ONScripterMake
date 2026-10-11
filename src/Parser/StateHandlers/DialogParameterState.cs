@@ -3,63 +3,42 @@ using ONSMake.Lexer;
 
 namespace ONSMake.Parser;
 
-// @TODO: Реализовать нормальную обработку диалогов в токены
 #nullable enable
 public class DialogParameterState : ParserStateHandler
 {
     public DialogParameterState(ParserContext context) : base(context)
     {
-        _tokenHandlers.Add(TokenType.Comment, TryHandleStub);
-        _tokenHandlers.Add(TokenType.JumpPoint, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Identifier, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Number, TryHandleStub);
-        _tokenHandlers.Add(TokenType.String, TryHandleStub);
-
-        _tokenHandlers.Add(TokenType.Color, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Dialog, TryHandleStub);
-        _tokenHandlers.Add(TokenType.InlineWaitCommand, TryHandleStub);
-        _tokenHandlers.Add(TokenType.InlineDelayCommand, TryHandleStub);
-        _tokenHandlers.Add(TokenType.DialogClickWait, TryHandleStub);
-        _tokenHandlers.Add(TokenType.DialogPageWait, TryHandleStub);
-        _tokenHandlers.Add(TokenType.DialogContinueScript, TryHandleStub);
-        _tokenHandlers.Add(TokenType.DialogSuspend, TryHandleStub);
-        _tokenHandlers.Add(TokenType.DialogVoiceWait, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Left, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Right, TryHandleStub);
-        _tokenHandlers.Add(TokenType.SLeft, TryHandleStub);
-
-        _tokenHandlers.Add(TokenType.SRight, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Variable, TryHandleStub);
-        _tokenHandlers.Add(TokenType.IndexVariable, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Comma, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Colon, TryHandleStub);
-
-        _tokenHandlers.Add(TokenType.Add, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Subtract, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Multiply, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Divide, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Less, TryHandleStub);
-
-        _tokenHandlers.Add(TokenType.LessOrEqual, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Equal, TryHandleStub);
-        _tokenHandlers.Add(TokenType.NotEqual, TryHandleStub);
-        _tokenHandlers.Add(TokenType.GreaterOrEqual, TryHandleStub);
-        _tokenHandlers.Add(TokenType.Greater, TryHandleStub);
-
-        _tokenHandlers.Add(TokenType.Or, TryHandleStub);
-        _tokenHandlers.Add(TokenType.And, TryHandleStub);
+        _tokenHandlers.Add(TokenType.Dialog, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.InlineWaitCommand, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.InlineDelayCommand, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.DialogClickWait, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.DialogPageWait, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.DialogContinueScript, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.DialogSuspend, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.DialogVoiceWait, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.Comment, TryHandleDialogPart);
+        _tokenHandlers.Add(TokenType.SLeft, TryHandleInlineCommand);
         Recycle();
     }
 
-    public void Recycle()
-    {
+    public void Recycle() => 
         IsReady = true;
-    }
 
-    public override void OnReturn(Token? returnValue) { }
+    public override void OnReturn(Token? returnValue) => 
+        _context.PopState(returnValue);
 
     public override Token? OnReset(Token? returnValue) => null;
 
-    private void TryHandleStub(Token token, out bool success) => success = true;
+    private void TryHandleDialogPart(Token token, out bool success)
+    {
+        _context.PopState(token);
+        success = true;
+    }
+
+    private void TryHandleInlineCommand(Token token, out bool success)
+    {
+        ((InlineCommandState)_context.PushState(OnsParserStateType.InlineCommand)).Recycle();
+        success = true;
+    }
 }
 #nullable restore

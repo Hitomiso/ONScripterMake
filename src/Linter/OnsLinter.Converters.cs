@@ -17,48 +17,50 @@ public partial class OnsLinter
     {
         if (token.Type == TokenType.ParsedLabel || token.Type == TokenType.String)
         {
-            string labelName = token.Content;
+            string labelName;
             if (token.Type == TokenType.String)
-                labelName = labelName[1..^1];
-            if (!_scriptContext.Labels.ContainsKey(labelName.ToLower()))
+                labelName = token.Content[1..^1].ToString().ToLower();
+            else
+                labelName = token.Content.ToString().ToLower();
+            if (!_scriptContext.Labels.ContainsKey(labelName))
                 return MakeCheckErrorResult(token, MessageID.ERR_LABEL_NOT_FOUND, labelName);
             return MakeCheckOkResult();
         }
-        if (token.Type == TokenType.Variable && token.Content == "$")
+        if (token.Type == TokenType.Variable && token.Content.SequenceEqual("$"))
 			return MakeCheckOkResult();
         return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_LABEL);
     }
 
     private Result<object, TokenCheckError> CheckCanConvertToNum(Token token)
     {
-        if (IsTokenNumeric(token))
-            return MakeCheckOkResult();
-        if (token.Type == TokenType.Identifier)
-            return MakeCheckErrorResult(token, MessageID.ERR_NUMALIAS_NOT_DEFINED, token.Content);
-        else
+        Result<bool, TokenCheckError> isNumericResult = GuessIsOperandNumeric(token);
+        if (isNumericResult.IsError)
+            return Result<object, TokenCheckError>.Fail(isNumericResult.Error);
+        if (!isNumericResult.Value)
             return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_NUMBER);
+        return MakeCheckOkResult();
     }
 
     private Result<object, TokenCheckError> CheckCanConvertToStr(Token token)
     {
-        if (IsTokenString(token))
-			return MakeCheckOkResult();
-		if (token.Type == TokenType.Identifier)
-			return MakeCheckErrorResult(token, MessageID.ERR_STRALIAS_NOT_DEFINED, token.Content);
-		else
-			return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_STRING);        
+        Result<bool, TokenCheckError> isStringResult = GuessIsOperandString(token);
+        if (isStringResult.IsError)
+            return Result<object, TokenCheckError>.Fail(isStringResult.Error);
+        if (!isStringResult.Value)
+            return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_STRING);
+        return MakeCheckOkResult();
     }
 
     private Result<object, TokenCheckError> CheckCanConvertToNumVar(Token token)
     {
-		if (token.Type == TokenType.Variable && (token.Content == "%" || token.Content == "?"))
+		if (token.Type == TokenType.Variable && (token.Content.SequenceEqual("%") || token.Content.SequenceEqual("?")))
 			return MakeCheckOkResult();
         return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_NUMVAR);
     }
 
     private Result<object, TokenCheckError> CheckCanConvertToStrVar(Token token)
     {
-        if (token.Type == TokenType.Variable && token.Content == "$")
+        if (token.Type == TokenType.Variable && token.Content.SequenceEqual("$"))
 			return MakeCheckOkResult();
         return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_STRVAR);
     }
@@ -69,7 +71,7 @@ public partial class OnsLinter
             return MakeCheckOkResult();
         if (token.Type == TokenType.String)
         {
-            string content = token.Content[1..^1];
+            ReadOnlySpan<char> content = token.Content[1..^1];
             if (content.Length == 7 && content[0] == '#' && int.TryParse(content[1..7], System.Globalization.NumberStyles.HexNumber, null, out _))
                 return MakeCheckOkResult();
         }
@@ -78,11 +80,13 @@ public partial class OnsLinter
 
     private Result<object, TokenCheckError> CheckCanConvertToEnum(Token token, string[] allowedValues)
     {
-        string name = token.Content;
+        string name;
         if (token.Type == TokenType.String)
-            name = token.Content[1..^1];
+            name = token.Content[1..^1].ToString();
+        else
+            name = token.Content.ToString();
         if ((token.Type == TokenType.Identifier || token.Type == TokenType.String) && allowedValues.Contains(name))
-			return MakeCheckOkResult();
+            return MakeCheckOkResult();
         return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_ENUM, string.Join(',', allowedValues));
     }
 	
@@ -91,9 +95,5 @@ public partial class OnsLinter
         if (token.Type != TokenType.Dialog)
 			return MakeCheckErrorResult(token, MessageID.ERR_NOT_A_DIALOG);
 		return MakeCheckOkResult();
-        // @TODO: Обработать правильность строки вывода
-        // Выделять, проверять и сворачивать теги форматирования
-        // Выдавать предупреждение на незакрытые кавычки диалога (во всей реплике)
-        // Выдавать предупреждение на двойной пробел (во всей реплике)
     }
 }

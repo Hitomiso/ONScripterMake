@@ -8,6 +8,8 @@
 	<type fullname="ONSMake.Parser.ForStepState" preserve="all" />
 	<type fullname="ONSMake.Parser.ForToState" preserve="all" />
 	<type fullname="ONSMake.Parser.IfParametersState" preserve="all" />
+	<type fullname="ONSMake.Parser.InlineCommandParameterState" preserve="all" />
+	<type fullname="ONSMake.Parser.InlineCommandState" preserve="all" />
 	<type fullname="ONSMake.Parser.InnerExpressionState" preserve="all" />
 	<type fullname="ONSMake.Parser.LabelState" preserve="all" />
 	<type fullname="ONSMake.Parser.NormalParametersState" preserve="all" />

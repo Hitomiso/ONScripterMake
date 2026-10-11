@@ -1,4 +1,5 @@
 ﻿using ONSMake.Lexer;
+using System;
 
 namespace ONSMake.Parser;
 
@@ -14,7 +15,7 @@ public class LabelState : ParserStateHandler
 
     public void TryRecycle(Token asteriskToken, out bool success)
     {
-        if (asteriskToken.Content != "*")
+        if (!asteriskToken.Content.SequenceEqual("*"))
         {
             success = false;
             return;
@@ -34,7 +35,7 @@ public class LabelState : ParserStateHandler
             success = false;
             return;
         }
-        Token labelToken = new(TokenType.ParsedLabel, "*" + token.Content, _asteriskToken.StartColumn);
+        Token labelToken = new(TokenType.ParsedLabel, token.OriginalLine, token.StartColumn - 1, token.Length + 1);
         _context.PopState(labelToken);
         success = true;
     }

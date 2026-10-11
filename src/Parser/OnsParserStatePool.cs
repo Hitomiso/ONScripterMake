@@ -22,6 +22,8 @@ public sealed class OnsParserStatePool
         { typeof(ForToState), OnsParserStateType.ForTo },
         { typeof(ForStepState), OnsParserStateType.ForStep },
         { typeof(DialogParameterState), OnsParserStateType.DialogParameter },
+        { typeof(InlineCommandState), OnsParserStateType.InlineCommand },
+        { typeof(InlineCommandParameterState), OnsParserStateType.InlineCommandParameter },
     };
 
     private readonly ConcurrentDictionary<OnsParserStateType, ConcurrentBag<ParserStateHandler>> _stateBuckets = [];

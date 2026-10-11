@@ -87,9 +87,9 @@ public class InnerExpressionState : ParserStateHandler
     protected void TryHandleOperand(Token token, out bool success)
     {
         // Обрабатываем словесные операторы
-        if (token.Type == TokenType.Identifier && token.Content == "mod")
+        if (token.Type == TokenType.Identifier && token.Content.SequenceEqual("mod"))
         {
-            Token moduloToken = new(TokenType.ParsedModulo, token.Content, token.StartColumn);
+            Token moduloToken = new(TokenType.ParsedModulo, token.OriginalLine, token.StartColumn, token.Length);
             TryHandleOperator(moduloToken, out success);
             return;
         }
@@ -97,8 +97,8 @@ public class InnerExpressionState : ParserStateHandler
         // Обрабатываем отрицательное число как бинарную операцию, если можно
         if (_isOperatorAwaited && token.Type == TokenType.Number && token.Content[0] == '-')
         {
-            var minusToken = new Token(TokenType.Subtract, "-", token.StartColumn);
-            var numberToken = new Token(TokenType.Number, token.Content[1..], token.StartColumn + 1);
+            var minusToken = new Token(TokenType.Subtract, token.OriginalLine, token.StartColumn, 1);
+            var numberToken = new Token(TokenType.Number, token.OriginalLine, token.StartColumn + 1, token.Length - 1);
             _parameterBuffer.Add(minusToken);
             _parameterBuffer.Add(numberToken);
             success = true;
@@ -117,7 +117,7 @@ public class InnerExpressionState : ParserStateHandler
 
     protected void TryHandleVariable(Token token, out bool success)
     {
-        if (token.Content == "?")
+        if (token.Content.SequenceEqual("?"))
         {
             var arrayHandler = (ArrayState)_context.PushState(OnsParserStateType.Array);
             arrayHandler.TryRecycle(token, out success);
@@ -134,7 +134,7 @@ public class InnerExpressionState : ParserStateHandler
         // Обрабатываем унарный минус
         if (token.Type == TokenType.Subtract && (_parameterBuffer.Count == 0 || CONDITION_OPERATORS.Contains(_parameterBuffer[^1].Type)))
         {
-            var zeroToken = new Token(TokenType.Number, "0", token.StartColumn);
+            var zeroToken = new Token(TokenType.Number, "0", 0, 1);
             _parameterBuffer.Add(zeroToken);
             _parameterBuffer.Add(token);
             _isOperatorAwaited = false;

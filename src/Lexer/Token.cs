@@ -7,18 +7,35 @@ namespace ONSMake.Lexer;
 
 public readonly record struct Token
 {
-    public readonly TokenType Type;
-    public readonly string Content;
-    public readonly int StartColumn;
-    public readonly List<Token> Children = [];
+    public readonly ReadOnlySpan<char> Content =>
+        _cachedLoweredContent ?? OriginalLine.AsSpan().Slice(StartColumn, Length);
 
-    public Token(TokenType type, string content, int startColumn)
+    public readonly TokenType Type;
+    public readonly string OriginalLine;
+    public readonly int StartColumn;
+    public readonly int Length;
+    public readonly List<Token> Children = [];
+    
+    private readonly char[] _cachedLoweredContent;
+
+    public Token(TokenType type, string originalLine, int startColumn, int length)
     {
-        if (content == null)
-            throw new NullReferenceException();
+        OriginalLine = originalLine ?? throw new NullReferenceException();
         Type = type;
-        Content = content;
         StartColumn = startColumn;
+        Length = length;
+
+        if (type != TokenType.Identifier)
+            return;
+        foreach (char c in Content)
+        {
+            if (char.IsUpper(c))
+            {
+                _cachedLoweredContent = new char[length];
+                OriginalLine.AsSpan().Slice(StartColumn, Length).ToLowerInvariant(_cachedLoweredContent);
+                break;
+            }
+        }
     }
     
 	public override string ToString() => $"{Type}({Content})";

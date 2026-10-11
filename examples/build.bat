@@ -1,7 +1,7 @@
 @echo off
 .\tools\onsmake
 if ERRORLEVEL 1 goto :error
-cd game-release
+cd game
 start onscripter-ru-dev.exe
 cd ..
 exit

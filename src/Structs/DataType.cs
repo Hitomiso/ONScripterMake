@@ -8,6 +8,7 @@ public enum DataType
     Str,
     NumVar,
     StrVar,
+	AnyVar, // Only in custom commands (defsub)
     Color,
     Effect,
     Enum,

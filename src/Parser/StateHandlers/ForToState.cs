@@ -16,7 +16,7 @@ public class ForToState : NormalParametersState
 
     private void TryHandleName(Token token, out bool success)
     {
-        if (token.Content != "step")
+        if (!token.Content.SequenceEqual("step"))
         {
             TryHandleOperand(token, out success);
             return;
