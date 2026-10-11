@@ -35,7 +35,7 @@ public class ForCounterState : ParserStateHandler
 
     private void TryHandleVariable(Token token, out bool success)
     {
-        if (_variableToken != null || token.Content != "%" && token.Content != "?")
+        if (_variableToken != null || !token.Content.SequenceEqual("%") && !token.Content.SequenceEqual("?"))
         {
             success = false;
             return;
@@ -46,7 +46,7 @@ public class ForCounterState : ParserStateHandler
 
     private void TryHandleAssign(Token token, out bool success)
     {
-        if (_variableToken == null || token.Content != "=")
+        if (_variableToken == null || !token.Content.SequenceEqual("="))
         {
             success = false;
             return;

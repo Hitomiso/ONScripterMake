@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using ONSMake;
 
@@ -89,10 +90,11 @@ public static class OnsLexer
         new LexemeRule("&", TokenType.And)
     ];
     
-    public static Result<List<Token>, LexerError> TokenizeLine(ReadOnlySpan<char> lineSpan)
+    public static Result<Token[], LexerError> TokenizeLine(string line)
     {
-        List<Token> tokens = [];
+        using TokenBuffer tokens = new(16);
         int col = 0;
+        ReadOnlySpan<char> lineSpan = line.AsSpan();
 
         while (col < lineSpan.Length)
         {
@@ -108,7 +110,8 @@ public static class OnsLexer
             {
                 if (lineSegment.Length > 1 && lineSegment[1] == '*')
                 {
-                    tokens.Add(new Token(TokenType.Directive, "#incremental_label", col));
+                    const string INC_LABEL_DIRECTIVE_NAME = "#incremental_label";
+                    tokens.Add(new Token(TokenType.Directive, INC_LABEL_DIRECTIVE_NAME, 0, INC_LABEL_DIRECTIVE_NAME.Length));
                     col++;
                     continue;
                 }
@@ -117,7 +120,7 @@ public static class OnsLexer
                     length++;
                 if (length > 1)
                 {
-                    tokens.Add(new Token(TokenType.Directive, lineSegment[..length].ToString(), col));
+                    tokens.Add(new Token(TokenType.Directive, line, col, length));
                     col += length;
                     continue;
                 }
@@ -132,10 +135,9 @@ public static class OnsLexer
                 if (checkResult.Value.IsError)
                 {
                     LexerError error = new(checkResult.Value.Error, col);
-                    return Result<List<Token>, LexerError>.Fail(error);
+                    return Result<Token[], LexerError>.Fail(error);
                 }
-                string content = lineSegment[..checkResult.Value.Value.TokenLength].ToString();
-                token = new Token(checkResult.Value.Value.TokenType, content, col);
+                token = new Token(checkResult.Value.Value.TokenType, line, col, checkResult.Value.Value.TokenLength);
                 tokens.Add((Token)token);
                 col += checkResult.Value.Value.TokenLength;
                 break;
@@ -143,11 +145,11 @@ public static class OnsLexer
             if (token == null)
             {
                 LexerError error = new(MessageID.ERR_INVALID_TOKEN, col);
-                return Result<List<Token>, LexerError>.Fail(error);
+                return Result<Token[], LexerError>.Fail(error);
             }
         }
 
-        return Result<List<Token>, LexerError>.Ok(tokens);
+        return Result<Token[], LexerError>.Ok(tokens.ToArray());
     }
 }
 #nullable restore

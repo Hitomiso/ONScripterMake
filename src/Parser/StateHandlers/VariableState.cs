@@ -19,7 +19,7 @@ public class VariableState : ParserStateHandler
 
     public void TryRecycle(Token varToken, out bool success)
     {
-        if (varToken.Type != TokenType.Variable && varToken.Type != TokenType.IndexVariable || varToken.Content == "?")
+        if (varToken.Type != TokenType.Variable && varToken.Type != TokenType.IndexVariable || varToken.Content.SequenceEqual("?"))
         {
             success = false;
             return;
@@ -51,12 +51,12 @@ public class VariableState : ParserStateHandler
 
     private void TryHandleVariable(Token token, out bool success)
     {
-        if (token.Content == "%")
+        if (token.Content.SequenceEqual("%"))
         {
             var varHandler = (VariableState)_context.PushState(OnsParserStateType.Variable);
             varHandler.TryRecycle(token, out success);
         }
-        else if (token.Content == "?")
+        else if (token.Content.SequenceEqual("?"))
         {
             var arrayHandler = (ArrayState)_context.PushState(OnsParserStateType.Array);
             arrayHandler.TryRecycle(token, out success);

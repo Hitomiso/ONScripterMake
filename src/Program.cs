@@ -30,7 +30,10 @@ public static class Program
                 ProcessFilesRaw(correctIncludeOrder, _config.OutputFile);
             else
                 ProcessFilesSmart(correctIncludeOrder, _config.OutputFile);
-            OutputHandler.PrintInfo($"Script saved in {_config.OutputFile}.");
+            if (OutputHandler.Warnings > 0)
+                OutputHandler.PrintInfo($"Script saved in {_config.OutputFile} with {OutputHandler.Warnings} warnings.");
+            else
+                OutputHandler.PrintInfo($"Script saved in {_config.OutputFile}.");
         }
         catch (Exception ex)
         {
@@ -87,14 +90,17 @@ public static class Program
         // Выводим сообщения из каждого обработанного файла
         foreach (ScriptUnit procFile in unitsToLint)
         {
-            foreach (ScriptMessage msg in procFile.ProcessingMessages)
+            foreach (ScriptMessage msg in procFile.Messages)
                 OutputHandler.PrintMessage(msg);
         }
 
         // Записываем в выходной файл
         if (OutputHandler.Errors > 0)
         {
-            OutputHandler.PrintInfo($"Build FAILED with {OutputHandler.Errors} errors.");
+            if (OutputHandler.Warnings > 0)
+                OutputHandler.PrintInfo($"Build FAILED with {OutputHandler.Errors} errors and {OutputHandler.Warnings} warnings.");
+            else
+                OutputHandler.PrintInfo($"Build FAILED with {OutputHandler.Errors} errors.");
             if (_config.IgnoreErrors)
                 OutputHandler.PrintInfo($"Ignoring errors, writing output anyway...");
             else

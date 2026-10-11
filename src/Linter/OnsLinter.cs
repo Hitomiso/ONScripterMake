@@ -86,7 +86,7 @@ public partial class OnsLinter
     public void LintLine(ScriptUnit fileUnit, ProcessedLine line)
     {
         bool needReparse;
-        List<Token> rootTokens = line.Tokens;
+        Token[] rootTokens = line.Tokens;
         do
         {
             needReparse = false;
@@ -96,82 +96,57 @@ public partial class OnsLinter
                     continue;
                 Result<object, TokenCheckError> checkResult = CheckCommandCallToken(token);
                 if (!checkResult.IsError)
-                    return;
+                    continue;
                 
                 if (checkResult.Error.Token == null || checkResult.Error.MessageID == null)
                     throw new ApplicationException("Incorrect error returned.");
-                if (checkResult.Error.MessageID != MessageID.POTENTIAL_COMMAND)
+                if (checkResult.Error.MessageID != MessageID._POTENTIAL_COMMAND)
                 {
-                    AddErrorToFile(fileUnit, line.InputLineIndex, checkResult.Error.Token.Value, (MessageID)checkResult.Error.MessageID, checkResult.Error.Args);
+                    bool isWarning = checkResult.Error.MessageID > MessageID._WARN_START && checkResult.Error.MessageID < MessageID._WARN_END;
+                    ScriptMessage.MessageType type = isWarning ? ScriptMessage.MessageType.Warning : ScriptMessage.MessageType.Error;
+                    AddErrorToFile(fileUnit, line.InputLineIndex, checkResult.Error.Token.Value, (MessageID)checkResult.Error.MessageID, checkResult.Error.Args, type);
                     return;
                 }
 
                 // Ищем проблемную лексему
-                int commandTokenIndex = line.Lexemes.FindIndex(lexeme => lexeme.StartColumn == checkResult.Error.Token.Value.StartColumn);
+                int commandTokenIndex = Array.FindIndex(line.Lexemes, lexeme => lexeme.StartColumn == checkResult.Error.Token.Value.StartColumn);
                 if (commandTokenIndex == -1)
                     throw new ArgumentException("Can not find potential command lexeme index.");
 
                 // Репарсим строку
-                List<Token> potentialCommandTokens = line.Lexemes[commandTokenIndex..];
+                Token[] potentialCommandTokens = line.Lexemes[commandTokenIndex..];
                 foreach (Token tokenToClear in potentialCommandTokens)
                     tokenToClear.Children.Clear();
-                Result<List<Token>, Token> reparseResult = OnsParser.ParseTokens(potentialCommandTokens);
+                Result<Token[], Token> reparseResult = OnsParser.ParseTokens(potentialCommandTokens);
                 if (reparseResult.IsError)
                 {
-                    AddErrorToFile(fileUnit, line.InputLineIndex, reparseResult.Error, MessageID.ERR_UNEXPECTED_TOKEN, [reparseResult.Error.ToString()]);
+                    AddErrorToFile(fileUnit, line.InputLineIndex, reparseResult.Error, MessageID.ERR_UNEXPECTED_TOKEN, [reparseResult.Error.Type.ToString()]);
                     return;
                 }
                 rootTokens = reparseResult.Value;
                 needReparse = true;
+                break;
             }
         }
         while (needReparse);
     }
 
-    private static void AddErrorToFile(ScriptUnit fileUnit, int line, Token errorToken, MessageID messageId, string[] args)
+    private static void AddErrorToFile(ScriptUnit fileUnit, int line, Token errorToken, MessageID messageId, string[] args, ScriptMessage.MessageType messageType = ScriptMessage.MessageType.Error)
     {
         TextPosition pos = new(line, errorToken.StartColumn);
-        ScriptMessage msg = new(fileUnit, pos, errorToken.Content.Length, ScriptMessage.MessageType.Error, messageId, args);
-        fileUnit.ProcessingMessages.Add(msg);
+        ScriptMessage msg = new(fileUnit, pos, errorToken.Content.Length, messageType, messageId, args);
+        fileUnit.AddMessage(msg);
     }
 
-    private bool IsTokenNumeric(Token token)
-    {
-        switch (token.Type)
-        {
-            case TokenType.Identifier:
-                return _scriptContext.Numaliases.ContainsKey(token.Content.ToLower());
-            case TokenType.Number:
-                return true;
-            case TokenType.Variable:
-                return token.Content != "$";
-            default:
-                return false;
-        }
-    }
-
-    private bool IsTokenString(Token token)
-    {
-        switch (token.Type)
-        {
-            case TokenType.Identifier:
-                return _scriptContext.Straliases.ContainsKey(token.Content.ToLower());
-            case TokenType.String:
-                return true;
-            case TokenType.Variable:
-                return token.Content == "$";
-            default:
-                return false;
-        }
-    }
-	
-	private static Result<object, TokenCheckError> MakeCheckErrorResult(Token token, MessageID messageID, params string[] args) =>
+    private static Result<object, TokenCheckError> MakeCheckErrorResult(Token token, MessageID messageID, params string[] args) =>
 		Result<object, TokenCheckError>.Fail(new TokenCheckError(token, messageID, args));
 	private static Result<object, TokenCheckError> MakeCheckOkResult() =>
 		Result<object, TokenCheckError>.Ok(null);
-	
-	private static Result<bool, TokenCheckError> MakeIsNumericErrorResult(Token token, MessageID messageID, params string[] args) =>
+
+    private static Result<bool, TokenCheckError> MakeTypeGuessErrorResult(TokenCheckError checkError) =>
+        Result<bool, TokenCheckError>.Fail(checkError);
+	private static Result<bool, TokenCheckError> MakeTypeGuessErrorResult(Token token, MessageID messageID, params string[] args) =>
 		Result<bool, TokenCheckError>.Fail(new TokenCheckError(token, messageID, args));
-	private static Result<bool, TokenCheckError> MakeIsNumericOkResult(bool isNumeric) =>
+	private static Result<bool, TokenCheckError> MakeTypeGuessOkResult(bool isNumeric) =>
 		Result<bool, TokenCheckError>.Ok(isNumeric);
 }

@@ -23,7 +23,7 @@ public class ArrayState : ParserStateHandler
 
     public void TryRecycle(Token arrayToken, out bool success)
     {
-        if (arrayToken.Content != "?")
+        if (!arrayToken.Content.SequenceEqual("?"))
         {
             success = false;
             return;
@@ -85,7 +85,7 @@ public class ArrayState : ParserStateHandler
 
     private void TryHandleVariable(Token token, out bool success)
     {
-        if (token.Content != "%")
+        if (!token.Content.SequenceEqual("%"))
         {
             success = false;
             return;

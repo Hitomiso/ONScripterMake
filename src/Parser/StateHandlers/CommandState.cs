@@ -40,7 +40,7 @@ public class CommandState : ParserStateHandler
         if (_commandToken != null && token != null)
         {
             ((Token)_commandToken).Children.Add((Token)token);
-            switch (((Token)_commandToken).Content.ToLower())
+            switch (((Token)_commandToken).Content)
             {
                 case "notif":
                 case "if":
@@ -91,7 +91,7 @@ public class CommandState : ParserStateHandler
     {
         if (_commandToken == null)
             return;
-        switch (((Token)_commandToken).Content.ToLower())
+        switch (((Token)_commandToken).Content)
         {
             case "notif":
             case "if":

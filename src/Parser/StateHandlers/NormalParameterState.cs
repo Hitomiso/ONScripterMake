@@ -37,7 +37,7 @@ public class NormalParametersState : InnerExpressionState
     private void TryHandleIdentifier(Token token, out bool success)
     {
         // Id после операнда обрабатываем как команду и выходим из состояния
-        if (_isOperatorAwaited && token.Content != "mod")
+        if (_isOperatorAwaited && !token.Content.SequenceEqual("mod"))
         {
             var commandHandler = (CommandState)_context.ResetToNewState(OnsParserStateType.Command);
             commandHandler.Recycle();

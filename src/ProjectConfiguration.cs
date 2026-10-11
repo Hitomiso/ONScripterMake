@@ -274,7 +274,6 @@ public class ProjectConfiguration
         var name = ReadStringProperty(cmdElement, "name");
         if (name == null)
             return null;
-        var desc = ReadStringProperty(cmdElement, "desc");
         var parameters = ReadArrayProperty(cmdElement, "params");
         if (parameters == null)
             return null;
@@ -289,10 +288,10 @@ public class ProjectConfiguration
 			}
             var param = ReadCommandParameter(paramElement);
             if (param != null)
-                cmdParams.Add(param);
+                cmdParams.Add((Parameter)param);
         }
 
-        return new Command(name, [.. cmdParams], desc);
+        return new Command(name, [.. cmdParams]);
     }
 
     private static Parameter? ReadCommandParameter(JsonElement paramElement)
@@ -303,13 +302,9 @@ public class ProjectConfiguration
             return null;
         }
 
-        var name = ReadStringProperty(paramElement, "name");
-        if (name == null)
-            return null;
         var type = ReadStringProperty(paramElement, "type");
         if (type == null)
             return null;
-        var desc = ReadStringProperty(paramElement, "desc");
         DataType paramDataType;
         if (!DataType.TryParse(type, out paramDataType))
         {
@@ -350,41 +345,37 @@ public class ProjectConfiguration
         }
 		bool repeatValue = false;
 		if (paramElement.TryGetProperty("repeat", out var repeatProperty))
-		{
 			repeatValue = repeatProperty.GetBoolean();
-		}
 
-        return new Parameter(paramDataType, name, enumValues.ToArray(), desc, repeatValue);
+        return new Parameter(paramDataType, enumValues.ToArray(), repeatValue);
     }
 
     private static string? ReadStringProperty(JsonElement parent, string subpropertyName)
     {
-        if (parent.TryGetProperty(subpropertyName, out var subproperty))
+        if (!parent.TryGetProperty(subpropertyName, out var subproperty))
+            return null;
+        if (subproperty.ValueKind != JsonValueKind.String)
         {
-            if (subproperty.ValueKind == JsonValueKind.String)
-                return subproperty.GetString();
-            else
-                OutputHandler.PrintError($"Property '{subpropertyName}' should be a string.");
+            OutputHandler.PrintError($"Property '{subpropertyName}' should be a string.");
+            return null;
         }
-        return null;
+        return subproperty.GetString();
     }
 
     private static JsonElement[]? ReadArrayProperty(JsonElement parent, string subpropertyName)
     {
-        if (parent.TryGetProperty(subpropertyName, out var subproperty))
+        if (!parent.TryGetProperty(subpropertyName, out var subproperty))
+            return null;
+        if (subproperty.ValueKind != JsonValueKind.Array)
         {
-            if (subproperty.ValueKind == JsonValueKind.Array)
-            {
-                int len = subproperty.GetArrayLength();
-                var output = new JsonElement[len];
-                for (int i = 0; i < len; i++)
-                    output[i] = subproperty[i];
-                return output;
-            }
-            else
-                OutputHandler.PrintError($"Property '{subpropertyName}' should be an array.");
+            OutputHandler.PrintError($"Property '{subpropertyName}' should be an array.");
+            return null;
         }
-        return null;
+        int len = subproperty.GetArrayLength();
+        var output = new JsonElement[len];
+        for (int i = 0; i < len; i++)
+            output[i] = subproperty[i];
+        return output;
     }    
 }
 #nullable restore

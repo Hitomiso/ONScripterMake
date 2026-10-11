@@ -22,7 +22,7 @@ public class ForFromState : InnerExpressionState
 
     private void TryHandleName(Token token, out bool success)
     {
-        if (token.Content != "to")
+        if (!token.Content.SequenceEqual("to"))
         {
             TryHandleOperand(token, out success);
             return;

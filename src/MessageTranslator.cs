@@ -5,7 +5,7 @@ namespace ONSMake;
 
 public static class MessageTranslator
 {
-    private const string VERSION_STRING = "ONSMake 3.0";
+    private const string VERSION_STRING = "ONSMake 3.1.4";
 
     private static Dictionary<MessageID, string> _translatedMessages = new()
     {
@@ -50,6 +50,16 @@ public static class MessageTranslator
         {MessageID.ERR_EFFECT_MASK_EXPECTED, "Effect mask file expected."},
         {MessageID.ERR_UNEXPECTED_EFFECT_MASK, "Unexpected effect mask."},
         {MessageID.ERR_INVALID_EFFECT_DURATION, "Invalid effect duration (ms)."},
+        {MessageID.ERR_ONLY_IN_D2, "This inline command is only allowed in d2."},
+        {MessageID.ERR_DIALOG_IS_EMPTY, "Dialog content is empty."},
+        {MessageID.ERR_UNEXPECTED_OPEN_FORMAT_TAG, "Unexpected opening format tag bracket."},
+        {MessageID.ERR_UNEXPECTED_CLOSE_FORMAT_TAG, "Unexpected closing format tag bracket."},
+        {MessageID.ERR_TOO_FEW_FORMAT_PARAMETERS, "Too few format parameters."},
+        {MessageID.ERR_UNKNOWN_FORMAT_TAG, "Unknown format tag '{0}'."},
+        {MessageID.ERR_INVALID_FORMAT_PARAMETER, "Invalid format parameter '{0}'."},
+        {MessageID.ERR_FORMAT_TAG_NOT_CLOSED, "Format tag is not closed."},
+        {MessageID.ERR_FORMAT_TAG_TOO_LONG, "Format tag is unusually long. Lost a colon somewhere?"},
+        {MessageID.ERR_TOO_MANY_FORMAT_TAGS, "Too many nested format tags to handle."},
 
         {MessageID.ERR_DIALOG_BETWEEN_NVL_DIRECTIVES, "Can not use dialog commands while building NVL dialog. Use #end first."},
         {MessageID.ERR_UNKNOWN_MESSAGE_CODE, "Unknown message code '{0}'."},
@@ -61,11 +71,15 @@ public static class MessageTranslator
         {MessageID.ERR_USE_N_DIRECTIVE_FIRST, "Use #n to start NVL dialog first."},
         {MessageID.ERR_UNKNOWN_COMMAND, "Unknown command '{0}'"},
 
+        {MessageID.WARN_COMMENT_AFTER_DIALOG, "Comments after dialogs are always displayed."},
+        {MessageID.WARN_DIALOG_QUOTES_NOT_CLOSED, "Double quotes are not closed."},
+        {MessageID.WARN_DIALOG_TOO_MANY_SPACES, "Too many spaces."},
+
         {MessageID.ASK_OVERWRITE_FILE, "File '{0}' already exists. Overwrite?"},
 		{MessageID.INFO_NOTE, "{0}"},
         {MessageID.HELP,
             $"{VERSION_STRING}\n" +
-            "Script \"build system\" with built-in linter for ONScripter-RU\n" +
+            "ONScripter-RU game scripts static analyzer and assembler.\n" +
             "Freeware. Licensed with GNU GPL v3\n" +
             "by Hitomiso, all lefts reserved.\n" +
             "\n" +
@@ -118,6 +132,7 @@ public static class MessageTranslator
             "\tWrite the output file even when there are detected errors in script.\n" +
             "\n" +
             "Note: this program is created specifically for ONScripter-RU (by Umineko Project) and its cool features may not work for other forks of NScripter.\n" +
+            "This program is not affiliated with, endorsed by, or associated with the Umineko Project team.\n" +
             "Software provided as-is, no guarantees, etc., etc...\n"
         },
     };
